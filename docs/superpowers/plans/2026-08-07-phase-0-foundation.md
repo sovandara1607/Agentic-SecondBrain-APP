@@ -1684,11 +1684,14 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 COPY pyproject.toml uv.lock ./
 COPY apps/api ./apps/api
+COPY worker ./worker
 COPY packages/ai_core ./packages/ai_core
 RUN uv sync --project apps/api --no-dev
 EXPOSE 8001
 CMD ["uv", "run", "--project", "apps/api", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--app-dir", "apps/api"]
 ```
+
+Note: the `worker` directory is copied in even though the API image never runs it, this is required because the root `pyproject.toml` declares a single `uv` workspace across `apps/api`, `worker`, and `packages/ai_core`, and `uv sync` resolves against the whole workspace's `uv.lock`, it fails if any declared member's `pyproject.toml` is missing from the build context, not just the one being installed.
 
 - [ ] **Step 4: Write the worker Dockerfile**
 
@@ -1700,10 +1703,13 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 COPY pyproject.toml uv.lock ./
 COPY worker ./worker
+COPY apps/api ./apps/api
 COPY packages/ai_core ./packages/ai_core
 RUN uv sync --project worker --no-dev
 CMD ["uv", "run", "--project", "worker", "--", "python", "worker/main.py"]
 ```
+
+Same reasoning as Step 3: all three workspace members must be present in the build context for `uv sync` to resolve, even though this image only runs `worker/main.py`.
 
 - [ ] **Step 5: Write the Caddyfile**
 
