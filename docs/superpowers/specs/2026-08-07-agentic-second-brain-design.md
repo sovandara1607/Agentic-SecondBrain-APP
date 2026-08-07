@@ -572,7 +572,7 @@ Covered in full in Section 4 (Database Schema), this section adds the Supabase-s
 3. Next.js Server Components read the session from cookies for server-rendered pages, Client Components use the Supabase client which auto-refreshes the token.
 4. Direct Supabase calls (CRUD) authenticate as the user automatically via the SDK, RLS does the enforcement, no custom backend check needed.
 5. When Next.js calls FastAPI, it attaches the current access token as `Authorization: Bearer <token>`.
-6. FastAPI's auth dependency verifies the JWT against Supabase's JWKS endpoint (not a shared secret, so key rotation on Supabase's side doesn't require a redeploy), extracts `sub` (the user id), and constructs a Postgres connection for that request using the same JWT, so RLS applies inside FastAPI too, not just in Next.js. This is the defense-in-depth point from Section 1: isolation is enforced at the database layer regardless of which service is asking.
+6. FastAPI's auth dependency verifies the JWT's signature using the same `JWT_SECRET` (HS256) configured across the self-hosted Supabase stack (GoTrue, PostgREST, Realtime, Kong), not a JWKS lookup, this is the standard, well-documented path for self-hosted Supabase, a shared secret kept only in server-side environment variables, never exposed to the browser. It extracts `sub` (the user id) from the verified payload, and constructs a Postgres connection for that request using the caller's original JWT, so RLS applies inside FastAPI too, not just in Next.js. This is the defense-in-depth point from Section 1: isolation is enforced at the database layer regardless of which service is asking. Asymmetric JWKS-based verification (Supabase's newer JWT signing keys feature) is a valid future hardening step, tracked in the v2 roadmap, not the MVP default, since it adds cross-service key configuration and a key-rotation maintenance window that a shared secret avoids.
 7. The worker, which has no per-request user session (it processes jobs for many users), uses the Supabase service role key, but every query it runs explicitly filters by the `user_id` on the job it's processing, service role bypasses RLS, so this filtering is a required discipline, not optional, and is covered by tests.
 
 ---
@@ -739,6 +739,7 @@ Deferred deliberately, not because they're unimportant, but because each adds an
 - **Browser extension for capture:** one-click capture from any webpage.
 - **Public API:** for users who want to script their own capture sources.
 - **Data export and local sync:** Obsidian-style local markdown export/import, for users who want portability guarantees.
+- **Asymmetric JWT verification (JWKS):** move FastAPI's token verification from the shared HS256 secret (Section 11) to Supabase's asymmetric JWT signing keys, once the extra cross-service configuration and a planned key-rotation window are worth the tradeoff.
 
 ---
 
