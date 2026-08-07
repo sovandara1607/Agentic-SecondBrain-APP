@@ -209,8 +209,10 @@ if __name__ == "__main__":
 
 - [ ] **Step 7: Verify the workspace installs**
 
-Run: `uv sync`
+Run: `uv sync --all-packages`
 Expected: completes without error, creates `.venv/` at the repo root, and `uv run python -c "import ai_core; print(ai_core.__version__)"` prints `0.1.0`.
+
+Plain `uv sync` only installs the root project's own dependencies plus whatever workspace members those dependencies pull in transitively, since nothing in this repo depends on `ai_core` or `worker` yet (that starts in Task 7 and Task 9), plain `uv sync` will not install them. `--all-packages` explicitly syncs every declared workspace member regardless of whether the root depends on it, which is what this verification (and every later task's `uv sync`) actually needs. Do not substitute a manual `uv pip install -e ... --no-deps` workaround, that bypasses `uv.lock` and defeats reproducible installs, which is the entire point of using `uv`.
 
 - [ ] **Step 8: Commit**
 
