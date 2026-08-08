@@ -553,13 +553,17 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- Row level security, standard four-policy pattern per tenant table
+-- Row level security, standard four-policy pattern per tenant table.
+-- profiles is deliberately excluded from this array: it has no user_id
+-- column (its id IS the user id), so the generic 'auth.uid() = user_id'
+-- policies below would fail against it. It gets its own two-policy
+-- treatment in the dedicated "profiles is special" block further down.
 do $$
 declare
   t text;
 begin
   foreach t in array array[
-    'profiles', 'subscriptions', 'projects', 'captures', 'notes',
+    'subscriptions', 'projects', 'captures', 'notes',
     'meetings', 'documents', 'tasks', 'time_blocks', 'entities',
     'relationships', 'embeddings', 'daily_reviews', 'weekly_reviews',
     'agent_actions', 'tags'
@@ -581,11 +585,9 @@ begin
   end loop;
 end $$;
 
--- profiles is special: id IS the user id, not a separate user_id column
-drop policy "select own rows" on profiles;
-drop policy "insert own rows" on profiles;
-drop policy "update own rows" on profiles;
-drop policy "delete own rows" on profiles;
+-- profiles is special: id IS the user id, not a separate user_id column.
+-- It was never in the loop above, so there are no generic policies to
+-- drop here first -- just enable RLS and add its own two policies.
 alter table profiles enable row level security;
 create policy "select own row" on profiles for select using (auth.uid() = id);
 create policy "update own row" on profiles for update using (auth.uid() = id);
