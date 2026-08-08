@@ -1232,6 +1232,8 @@ Run: `docker compose ps` (from `infra/supabase`, confirm the stack from Task 2 i
 
 Stop the dev server after verifying.
 
+**Self-correction (mechanical, not a design choice):** the first real signup attempt failed client-side with "Error sending confirmation email". `infra/supabase/.env` (from Task 2, inherited from the self-hosted Supabase `.env.example` template) sets `ENABLE_EMAIL_AUTOCONFIRM=false` with `SMTP_HOST=supabase-mail`, but this stack's `docker-compose.yml` defines no mail-catcher/SMTP service under that name — GoTrue has nowhere to send the confirmation email, so every signup fails at that step regardless of what Task 6's code does. Fixed by setting `ENABLE_EMAIL_AUTOCONFIRM=true` in `infra/supabase/.env` and `.env.example`, then `docker compose up -d auth` to pick up the change. This stack is local dev only (no real email delivery either way), so autoconfirm is the correct default; a deployment needing real email verification would need a real SMTP config and `ENABLE_EMAIL_AUTOCONFIRM=false`.
+
 - [ ] **Step 7: Commit**
 
 ```bash
