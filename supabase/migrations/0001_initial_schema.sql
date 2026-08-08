@@ -243,6 +243,9 @@ create trigger on_auth_user_created
 -- column (its id IS the user id), so the generic 'auth.uid() = user_id'
 -- policies below would fail against it. It gets its own two-policy
 -- treatment in the dedicated "profiles is special" block further down.
+-- agent_actions, relationships, and embeddings are also excluded: each
+-- needs stricter-than-standard policies (append-only, or cross-reference
+-- ownership validation) and gets its own dedicated block further down.
 do $$
 declare
   t text;
@@ -250,8 +253,7 @@ begin
   foreach t in array array[
     'subscriptions', 'projects', 'captures', 'notes',
     'meetings', 'documents', 'tasks', 'time_blocks', 'entities',
-    'relationships', 'embeddings', 'daily_reviews', 'weekly_reviews',
-    'agent_actions', 'tags'
+    'daily_reviews', 'weekly_reviews', 'tags'
   ]
   loop
     execute format('alter table %I enable row level security;', t);
@@ -279,35 +281,178 @@ create policy "update own row" on profiles for update using (auth.uid() = id);
 -- no insert/delete policy on profiles: rows are created only by the
 -- handle_new_user trigger (security definer) and never deleted directly
 
--- Junction tables without a user_id column, scoped through their parent
+-- agent_actions is an append-only audit log of what agents did: select
+-- and insert only, no update or delete, so a past action can't be edited
+-- or erased after the fact.
+alter table agent_actions enable row level security;
+create policy "select own rows" on agent_actions
+  for select using (auth.uid() = user_id);
+create policy "insert own rows" on agent_actions
+  for insert with check (auth.uid() = user_id);
+
+-- Junction tables without a user_id column, scoped through their parent.
+-- task_dependencies' insert also validates that depends_on_task_id (not
+-- just task_id) belongs to the same user, so a task can't be wired up to
+-- depend on -- or be depended on by -- another tenant's task.
 alter table task_dependencies enable row level security;
 create policy "select own rows" on task_dependencies
   for select using (exists (
     select 1 from tasks t where t.id = task_dependencies.task_id and t.user_id = auth.uid()
   ));
 create policy "insert own rows" on task_dependencies
-  for insert with check (exists (
-    select 1 from tasks t where t.id = task_dependencies.task_id and t.user_id = auth.uid()
-  ));
+  for insert with check (
+    exists (
+      select 1 from tasks t where t.id = task_dependencies.task_id and t.user_id = auth.uid()
+    )
+    and exists (
+      select 1 from tasks t2 where t2.id = task_dependencies.depends_on_task_id and t2.user_id = auth.uid()
+    )
+  );
 create policy "delete own rows" on task_dependencies
   for delete using (exists (
     select 1 from tasks t where t.id = task_dependencies.task_id and t.user_id = auth.uid()
   ));
 
+-- taggables' insert also validates ownership of the tagged row itself
+-- (taggable_id), branching on taggable_type, so a tag can't be attached
+-- to another tenant's note/task/project/document.
 alter table taggables enable row level security;
 create policy "select own rows" on taggables
   for select using (exists (
     select 1 from tags tg where tg.id = taggables.tag_id and tg.user_id = auth.uid()
   ));
 create policy "insert own rows" on taggables
-  for insert with check (exists (
-    select 1 from tags tg where tg.id = taggables.tag_id and tg.user_id = auth.uid()
-  ));
+  for insert with check (
+    exists (select 1 from tags tg where tg.id = taggables.tag_id and tg.user_id = auth.uid())
+    and case taggables.taggable_type
+      when 'note' then exists (select 1 from notes n where n.id = taggables.taggable_id and n.user_id = auth.uid())
+      when 'task' then exists (select 1 from tasks t where t.id = taggables.taggable_id and t.user_id = auth.uid())
+      when 'project' then exists (select 1 from projects p where p.id = taggables.taggable_id and p.user_id = auth.uid())
+      when 'document' then exists (select 1 from documents d where d.id = taggables.taggable_id and d.user_id = auth.uid())
+      else false
+    end
+  );
 create policy "delete own rows" on taggables
   for delete using (exists (
     select 1 from tags tg where tg.id = taggables.tag_id and tg.user_id = auth.uid()
   ));
 
+-- relationships cross-references two arbitrary rows (source/target), so
+-- insert/update must also validate ownership of both endpoints, branching
+-- on source_type/target_type, not just ownership of the relationships row
+-- itself -- otherwise a tenant could link their own row to another
+-- tenant's row.
+alter table relationships enable row level security;
+create policy "select own rows" on relationships
+  for select using (auth.uid() = user_id);
+create policy "insert own rows" on relationships
+  for insert with check (
+    auth.uid() = user_id
+    and case relationships.source_type
+      when 'project' then exists (select 1 from projects p where p.id = relationships.source_id and p.user_id = auth.uid())
+      when 'note' then exists (select 1 from notes n where n.id = relationships.source_id and n.user_id = auth.uid())
+      when 'task' then exists (select 1 from tasks t where t.id = relationships.source_id and t.user_id = auth.uid())
+      when 'document' then exists (select 1 from documents d where d.id = relationships.source_id and d.user_id = auth.uid())
+      when 'meeting' then exists (select 1 from meetings m where m.id = relationships.source_id and m.user_id = auth.uid())
+      when 'entity' then exists (select 1 from entities e where e.id = relationships.source_id and e.user_id = auth.uid())
+      else false
+    end
+    and case relationships.target_type
+      when 'project' then exists (select 1 from projects p where p.id = relationships.target_id and p.user_id = auth.uid())
+      when 'note' then exists (select 1 from notes n where n.id = relationships.target_id and n.user_id = auth.uid())
+      when 'task' then exists (select 1 from tasks t where t.id = relationships.target_id and t.user_id = auth.uid())
+      when 'document' then exists (select 1 from documents d where d.id = relationships.target_id and d.user_id = auth.uid())
+      when 'meeting' then exists (select 1 from meetings m where m.id = relationships.target_id and m.user_id = auth.uid())
+      when 'entity' then exists (select 1 from entities e where e.id = relationships.target_id and e.user_id = auth.uid())
+      else false
+    end
+  );
+create policy "update own rows" on relationships
+  for update using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and case relationships.source_type
+      when 'project' then exists (select 1 from projects p where p.id = relationships.source_id and p.user_id = auth.uid())
+      when 'note' then exists (select 1 from notes n where n.id = relationships.source_id and n.user_id = auth.uid())
+      when 'task' then exists (select 1 from tasks t where t.id = relationships.source_id and t.user_id = auth.uid())
+      when 'document' then exists (select 1 from documents d where d.id = relationships.source_id and d.user_id = auth.uid())
+      when 'meeting' then exists (select 1 from meetings m where m.id = relationships.source_id and m.user_id = auth.uid())
+      when 'entity' then exists (select 1 from entities e where e.id = relationships.source_id and e.user_id = auth.uid())
+      else false
+    end
+    and case relationships.target_type
+      when 'project' then exists (select 1 from projects p where p.id = relationships.target_id and p.user_id = auth.uid())
+      when 'note' then exists (select 1 from notes n where n.id = relationships.target_id and n.user_id = auth.uid())
+      when 'task' then exists (select 1 from tasks t where t.id = relationships.target_id and t.user_id = auth.uid())
+      when 'document' then exists (select 1 from documents d where d.id = relationships.target_id and d.user_id = auth.uid())
+      when 'meeting' then exists (select 1 from meetings m where m.id = relationships.target_id and m.user_id = auth.uid())
+      when 'entity' then exists (select 1 from entities e where e.id = relationships.target_id and e.user_id = auth.uid())
+      else false
+    end
+  );
+create policy "delete own rows" on relationships
+  for delete using (auth.uid() = user_id);
+
+-- embeddings.content_id is a polymorphic reference, so insert/update must
+-- also validate ownership of the referenced content row, branching on
+-- content_type, not just ownership of the embeddings row itself.
+alter table embeddings enable row level security;
+create policy "select own rows" on embeddings
+  for select using (auth.uid() = user_id);
+create policy "insert own rows" on embeddings
+  for insert with check (
+    auth.uid() = user_id
+    and case embeddings.content_type
+      when 'note' then exists (select 1 from notes n where n.id = embeddings.content_id and n.user_id = auth.uid())
+      when 'task' then exists (select 1 from tasks t where t.id = embeddings.content_id and t.user_id = auth.uid())
+      when 'project' then exists (select 1 from projects p where p.id = embeddings.content_id and p.user_id = auth.uid())
+      when 'document' then exists (select 1 from documents d where d.id = embeddings.content_id and d.user_id = auth.uid())
+      when 'meeting' then exists (select 1 from meetings m where m.id = embeddings.content_id and m.user_id = auth.uid())
+      else false
+    end
+  );
+create policy "update own rows" on embeddings
+  for update using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and case embeddings.content_type
+      when 'note' then exists (select 1 from notes n where n.id = embeddings.content_id and n.user_id = auth.uid())
+      when 'task' then exists (select 1 from tasks t where t.id = embeddings.content_id and t.user_id = auth.uid())
+      when 'project' then exists (select 1 from projects p where p.id = embeddings.content_id and p.user_id = auth.uid())
+      when 'document' then exists (select 1 from documents d where d.id = embeddings.content_id and d.user_id = auth.uid())
+      when 'meeting' then exists (select 1 from meetings m where m.id = embeddings.content_id and m.user_id = auth.uid())
+      else false
+    end
+  );
+create policy "delete own rows" on embeddings
+  for delete using (auth.uid() = user_id);
+
 -- jobs: RLS enabled, no policies, only the service role (which bypasses
 -- RLS) may read or write
 alter table jobs enable row level security;
+
+-- Billing/subscription columns: block tenant self-escalation. RLS only
+-- restricts which rows a tenant can touch, not which columns -- without
+-- this, an authenticated user could UPDATE their own profiles/subscriptions
+-- row (which the policies above allow) to set subscription_tier to 'pro'
+-- or flip a subscription to 'active' directly, bypassing billing.
+--
+-- This stack's base image already grants table-level UPDATE on every
+-- public table to authenticated (and anon) via default privileges. A
+-- column-scoped REVOKE has no effect on top of that: Postgres computes
+-- column access as table-level-grant OR column-level-grant, so the
+-- pre-existing table-wide UPDATE would still permit writing the
+-- "restricted" columns (confirmed empirically while verifying this
+-- migration). The only way to actually restrict specific columns is to
+-- revoke the table-level UPDATE entirely, then re-grant UPDATE
+-- column-by-column for whatever a tenant should still be able to edit
+-- themselves. Only the service role (used by the billing webhook, which
+-- bypasses RLS and grants alike) may still write the billing columns.
+revoke update on profiles from authenticated;
+grant update (full_name, working_hours, energy_profile, scheduler_weights) on profiles to authenticated;
+
+revoke update on subscriptions from authenticated;
+-- no columns re-granted: every mutable column on subscriptions
+-- (status, stripe_customer_id, stripe_subscription_id, current_period_end)
+-- is billing-controlled; a tenant has no legitimate column to self-update
+-- on their own subscription row.
