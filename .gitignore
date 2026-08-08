@@ -9,3 +9,8 @@ build/
 *.egg-info/
 .pytest_cache/
 .DS_Store
+
+# Vendored third-party stacks: track config, never generated secrets
+infra/supabase/.env
+infra/supabase/.env.old
+infra/supabase/docker-compose.yml.old

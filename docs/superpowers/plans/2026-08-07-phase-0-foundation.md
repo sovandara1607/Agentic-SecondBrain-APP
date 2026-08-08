@@ -274,11 +274,13 @@ Expected: `docker compose ps` (run from `infra/supabase`) shows all services (`d
 
 - [ ] **Step 5: Verify Postgres and Studio are reachable**
 
-Run: `psql "postgresql://postgres:$(grep ^POSTGRES_PASSWORD infra/supabase/.env | cut -d= -f2)@localhost:5432/postgres" -c "select 1;"`
+Run: `psql "postgresql://postgres.your-tenant-id:$(grep ^POSTGRES_PASSWORD infra/supabase/.env | cut -d= -f2)@localhost:5432/postgres" -c "select 1;"`
 Expected: returns `1`.
 
+Note: host port 5432 in this stack version (self-hosted/v0.7.2) is bound to Supavisor (the `supabase-pooler` container), not directly to `supabase-db` — `docker compose ps` shows `supabase-db` with no host port mapping, only `supabase-pooler` publishing `0.0.0.0:5432->5432`. Supavisor requires a tenant-qualified username (`<user>.<tenant-id>`); a bare `postgres` user fails with `FATAL: (ENOIDENTIFIER) no tenant identifier provided`. `POOLER_TENANT_ID` in `infra/supabase/.env` defaults to the literal value `your-tenant-id` (confirmed in `infra/supabase/CONFIG.md`: "External tenant ID created at first startup" by the pooler provisioning script) — it is not a placeholder that needs replacing, so `postgres.your-tenant-id` is the correct username against a freshly generated `.env`. Any `DATABASE_URL` built from these values (root `.env` in Step 6 below, Task 3's migration `psql`, and Task 7/8/9's FastAPI/worker `DATABASE_URL`) must use the same tenant-qualified `postgres.your-tenant-id` username, not bare `postgres`, since they all connect through the same pooler on port 5432.
+
 Open `http://localhost:8000` in a browser (or `curl -s -o /dev/null -w "%{http_code}" http://localhost:8000`).
-Expected: Kong responds (Studio login prompt in a browser, or a non-connection-refused HTTP status from curl).
+Expected: Kong responds (Studio login prompt in a browser, or a non-connection-refused HTTP status from curl — a `401` is expected and satisfies this check).
 
 - [ ] **Step 6: Copy the generated values into the root `.env` for later tasks to read**
 
@@ -286,7 +288,7 @@ Expected: Kong responds (Studio login prompt in a browser, or a non-connection-r
 cp .env.example .env
 ```
 
-Then manually edit `.env`, replacing the four `replace-with-generated-*` placeholders with the matching values from `infra/supabase/.env` (`POSTGRES_PASSWORD`, `JWT_SECRET`, `ANON_KEY`, `SERVICE_ROLE_KEY`), and update `DATABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to use the real password/anon key.
+Then manually edit `.env`, replacing the four `replace-with-generated-*` placeholders with the matching values from `infra/supabase/.env` (`POSTGRES_PASSWORD`, `JWT_SECRET`, `ANON_KEY`, `SERVICE_ROLE_KEY`), and update `DATABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to use the real password/anon key. `DATABASE_URL`'s username must be the tenant-qualified `postgres.your-tenant-id` (see Step 5 note above), not bare `postgres`.
 
 - [ ] **Step 7: Commit the vendored stack (config only, `.env` stays gitignored)**
 
