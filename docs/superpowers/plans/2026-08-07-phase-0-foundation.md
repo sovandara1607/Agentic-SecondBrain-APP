@@ -882,7 +882,7 @@ git commit -m "Scaffold Next.js app with Tailwind and shadcn/ui"
 **Files:**
 - Create: `apps/web/lib/supabase/client.ts`
 - Create: `apps/web/lib/supabase/server.ts`
-- Create: `apps/web/middleware.ts`
+- Create: `apps/web/proxy.ts` (self-corrected from `middleware.ts` during implementation — see note below Step 5)
 - Modify: `apps/web/.env.local` (gitignored, mirrors relevant values from root `.env`)
 
 **Interfaces:**
@@ -958,13 +958,15 @@ export async function createClient() {
 
 - [ ] **Step 5: Write the session-refresh middleware**
 
-Create `apps/web/middleware.ts`:
+> **Self-corrected during implementation:** Next.js 16 deprecated the `middleware.ts` file convention and renamed it to `proxy.ts` (the exported function is renamed `middleware` → `proxy`); behavior is otherwise identical. See `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md` and the official `npx @next/codemod@canary middleware-to-proxy .` codemod. The code below has been updated accordingly — create `apps/web/proxy.ts`, not `middleware.ts`.
+
+Create `apps/web/proxy.ts`:
 
 ```ts
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -1006,7 +1008,7 @@ Expected: succeeds.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/web/lib apps/web/middleware.ts apps/web/package.json apps/web/package-lock.json
+git add apps/web/lib apps/web/proxy.ts apps/web/package.json apps/web/package-lock.json
 git commit -m "Add Supabase SSR client helpers and session-refresh middleware"
 ```
 
