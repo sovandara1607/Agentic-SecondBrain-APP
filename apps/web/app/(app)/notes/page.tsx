@@ -25,8 +25,14 @@ export default async function NotesPage({
         .from("notes")
         .select("id, title, note_type, updated_at, projects(id, name)")
         .order("updated_at", { ascending: false });
-      if (q.trim()) {
-        const escaped = q.trim().replace(/[%,]/g, "");
+      // PostgREST's .or() takes a raw filter-DSL string, where
+      // ".,()\"*" are all structurally significant (column.op.value
+      // triples joined by commas). Stripping to just letters/numbers/
+      // spaces closes that off entirely rather than trying to escape
+      // each special character correctly - search doesn't need to
+      // support them anyway.
+      const escaped = q.trim().replace(/[^\p{L}\p{N} ]+/gu, "").trim();
+      if (escaped) {
         query = query.or(`title.ilike.%${escaped}%,content.ilike.%${escaped}%`);
       }
       return query;

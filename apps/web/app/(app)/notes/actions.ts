@@ -149,6 +149,29 @@ export async function deleteNote(formData: FormData) {
   redirect("/notes");
 }
 
+// taggables has no user_id column of its own - ownership is derived by
+// joining to whichever row taggable_id points at. Its RLS delete policy
+// (0001_initial_schema.sql) only checks the *tag's* owner, not the
+// note's, since a tag can only ever be attached to its own owner's
+// content via the insert policy - correct today, but an app-layer check
+// shouldn't lean on that assumption holding forever. Verifying note
+// ownership explicitly here, before touching taggables, keeps
+// authorization in the code, not implied by a policy at a different
+// layer.
+async function assertOwnsNote(
+  supabase: SupabaseClient,
+  userId: string,
+  noteId: string,
+) {
+  const { data } = await supabase
+    .from("notes")
+    .select("id")
+    .eq("id", noteId)
+    .eq("user_id", userId)
+    .single();
+  if (!data) throw new Error("Note not found.");
+}
+
 export async function addNoteTag(formData: FormData) {
   const supabase = await createClient();
   const {
@@ -159,6 +182,7 @@ export async function addNoteTag(formData: FormData) {
   const noteId = String(formData.get("note_id") ?? "");
   const name = String(formData.get("tag_name") ?? "").trim().toLowerCase();
   if (!noteId || !name) return;
+  await assertOwnsNote(supabase, user.id, noteId);
 
   const { data: tag, error: tagError } = await supabase
     .from("tags")
@@ -187,6 +211,7 @@ export async function removeNoteTag(formData: FormData) {
   const noteId = String(formData.get("note_id") ?? "");
   const tagId = String(formData.get("tag_id") ?? "");
   if (!noteId || !tagId) return;
+  await assertOwnsNote(supabase, user.id, noteId);
 
   const { error } = await supabase
     .from("taggables")
