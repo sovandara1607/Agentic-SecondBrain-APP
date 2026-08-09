@@ -156,7 +156,18 @@ services:
 
       # JSON array of signing JWKs (EC private + legacy symmetric)
       # For Podman, use: GOTRUE_JWT_KEYS: ${JWT_KEYS}
-      GOTRUE_JWT_KEYS: ${JWT_KEYS:-[]}
+      # Reverted to HS256-only signing (Task 8 self-correction, 2026-08-09):
+      # `utils/add-new-auth-keys.sh --update-env` (Task 2) uncommented this and
+      # populated JWT_KEYS with an EC key first, which GoTrue then used as its
+      # active *signing* key, issuing ES256 access tokens. That contradicts the
+      # documented MVP decision (commit 31738c9) that self-hosted Supabase auth
+      # uses the shared HS256 secret, not JWKS. Commented back out so GoTrue
+      # falls back to GOTRUE_JWT_SECRET (HS256) alone for signing. Other
+      # services' JWT_JWKS/API_JWT_JWKS/SUPABASE_JWKS fallbacks are left as-is
+      # (still contain the legacy HS256 key, so they keep verifying tokens
+      # correctly; see docs/superpowers/plans/2026-08-07-phase-0-foundation.md
+      # Task 2 section for the full writeup).
+      # GOTRUE_JWT_KEYS: ${JWT_KEYS:-[]}
 
       GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL}
 

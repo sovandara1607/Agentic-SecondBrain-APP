@@ -262,6 +262,12 @@ cd ../..
 
 This populates `infra/supabase/.env` with a real `POSTGRES_PASSWORD`, `JWT_SECRET`, `ANON_KEY`, and `SERVICE_ROLE_KEY`, matched to each other.
 
+**Self-correction (found during Task 8, fixed 2026-08-09):** run non-interactively with `--update-env` (required so the scripts actually write into `.env` instead of only printing — see Task 2's report), `utils/add-new-auth-keys.sh` also uncommented `GOTRUE_JWT_KEYS` (and the parallel `API_JWT_JWKS`/`JWT_JWKS`/`SUPABASE_JWKS` lines for storage/realtime/studio) in `infra/supabase/docker-compose.yml` and populated `JWT_KEYS` in `.env` with an EC (`ES256`) signing key listed *before* the legacy HS256 (`oct`) key. GoTrue picks its active *signing* key from that list, so it started issuing `ES256`-signed access tokens for real sign-ins — silently, since nothing in Tasks 2-7 decoded a real token's header. This directly contradicted the MVP decision already on record (commit `31738c9`, predating this task's execution): self-hosted Supabase auth here uses the shared `HS256` secret, not JWKS/asymmetric keys. The drift surfaced in Task 8, the first task to verify `/me` against a real GoTrue-issued token (see Task 8's report for the discovery and the `ES256`/`HS256` header diff).
+
+**Fix:** commented the `GOTRUE_JWT_KEYS: ${JWT_KEYS:-[]}` line back out in the `auth` service's environment block in `infra/supabase/docker-compose.yml` (with an explanatory comment in place), then recreated the container (`docker compose up -d auth` from `infra/supabase` — a plain `restart` does *not* pick up compose-file env changes on an already-created container). Left `JWT_KEYS`/`JWT_JWKS` untouched in `.env` and left `API_JWT_JWKS`/`JWT_JWKS`/`SUPABASE_JWKS` untouched in `docker-compose.yml` for the `rest`/`storage`/`realtime`/`studio` services — those still resolve to the JWKS value (which includes the legacy `oct`/`HS256` key alongside the now-inactive EC key), so they keep verifying tokens correctly without any changes; only GoTrue's own signing-key preference needed reverting.
+
+**Verification (Task 8):** a fresh password-grant token for the Task 6 test user now decodes to `{"alg": "HS256", "typ": "JWT"}` (previously `{"alg": "ES256", ...}`). `GET /me` with that real token returns `200 {"user_id":"b353df4f-8fbd-4f22-a141-7b08787d6eab"}`. Collateral check: PostgREST via Kong (`GET /rest/v1/profiles?select=id` with the same real token) still returns exactly the caller's own row under RLS (`[{"id":"b353df4f-..."}]`, vs. `[]` with no token), and Storage (`GET /storage/v1/bucket`) still returns `200` rather than a `401`/`403` — both confirm HS256-only verification keeps working stack-wide, not just in FastAPI.
+
 - [ ] **Step 4: Start the stack**
 
 ```bash
@@ -1573,6 +1579,8 @@ cd ../..
 ```
 
 Expected: `{"user_id":"<the signed-in user's uuid>"}`, matching the `id` column of that user's row in `profiles`.
+
+**Self-correction found here, fixed under Task 2 (2026-08-09):** the first real end-to-end attempt against this stack failed — a real GoTrue-issued token decoded to `{"alg": "ES256", ...}`, not `HS256`, so `verify_jwt` (built exactly per this task's Step 3, unchanged) correctly rejected it with `401`. Root cause was an infra-config drift from Task 2's key-generation script, not a bug in this task's code. Full root cause, fix, and re-verification (including the PostgREST/Storage collateral check) are documented under Task 2's Step 3, since that's where the vendor script that caused the drift is invoked. After the fix, a fresh real token decodes to `HS256` and `GET /me` returns `200 {"user_id":"b353df4f-8fbd-4f22-a141-7b08787d6eab"}` as expected above.
 
 - [ ] **Step 7: Commit**
 
