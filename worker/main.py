@@ -3,6 +3,7 @@ import time
 import uuid
 
 import psycopg
+from ai_core.pipeline import process_capture
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 POLL_INTERVAL_SECONDS = float(os.environ.get("WORKER_POLL_INTERVAL_SECONDS", "2"))
@@ -33,17 +34,32 @@ def claim_next_job(conn: psycopg.Connection) -> dict | None:
     return {"id": job_id, "user_id": user_id, "job_type": job_type, "payload": payload}
 
 
-def handle_job(job: dict) -> None:
-    # Phase 1+ registers real handlers per job_type (process_capture,
-    # run_scheduler, missed_task_pass, daily_review, weekly_review).
-    # Until then, any job type is logged and considered handled, which
-    # is enough to prove the claim/mark_done loop works end to end.
-    print(f"worker: handled job {job['id']} ({job['job_type']})")
+def handle_job(conn: psycopg.Connection, job: dict) -> None:
+    # Phase 3 registers handlers for run_scheduler, missed_task_pass,
+    # daily_review, weekly_review. Any job_type without a handler here is
+    # logged and considered handled (not failed) - a job type Phase 1
+    # doesn't know about yet isn't this job's fault.
+    if job["job_type"] == "process_capture":
+        capture_id = job["payload"]["capture_id"]
+        process_capture(conn, uuid.UUID(capture_id))
+        print(f"worker: processed capture {capture_id} (job {job['id']})")
+    else:
+        print(f"worker: handled job {job['id']} ({job['job_type']})")
 
 
-def mark_done(conn: psycopg.Connection, job_id: uuid.UUID) -> None:
+def mark_job_status(conn: psycopg.Connection, job_id: uuid.UUID, status: str) -> None:
     with conn.cursor() as cur:
-        cur.execute("update jobs set status = 'done' where id = %s", (job_id,))
+        cur.execute("update jobs set status = %s where id = %s", (status, job_id))
+    conn.commit()
+
+
+def mark_capture_failed(conn: psycopg.Connection, capture_id: str, error: str) -> None:
+    conn.rollback()  # discard whatever the failed pipeline run left uncommitted
+    with conn.cursor() as cur:
+        cur.execute(
+            "update captures set status = 'failed', pipeline_error = %s where id = %s",
+            (error, capture_id),
+        )
     conn.commit()
 
 
@@ -55,8 +71,16 @@ def run_forever() -> None:
             if job is None:
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
-            handle_job(job)
-            mark_done(conn, job["id"])
+            try:
+                handle_job(conn, job)
+                mark_job_status(conn, job["id"], "done")
+            except Exception as exc:  # noqa: BLE001 - must not crash the poll loop
+                print(f"worker: job {job['id']} ({job['job_type']}) failed: {exc}")
+                if job["job_type"] == "process_capture":
+                    mark_capture_failed(conn, job["payload"]["capture_id"], str(exc))
+                else:
+                    conn.rollback()
+                mark_job_status(conn, job["id"], "failed")
 
 
 if __name__ == "__main__":

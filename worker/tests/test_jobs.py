@@ -4,7 +4,7 @@ import uuid
 import psycopg
 import pytest
 
-from main import claim_next_job, mark_done
+from main import claim_next_job, handle_job, mark_job_status
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 TEST_USER_ID = "22222222-2222-2222-2222-222222222222"
@@ -64,7 +64,7 @@ def test_claim_next_job_returns_none_when_queue_is_empty(conn):
     assert job is None
 
 
-def test_mark_done_sets_status_done(conn):
+def test_mark_job_status_updates_status(conn):
     job_id = uuid.uuid4()
     with conn.cursor() as cur:
         cur.execute(
@@ -76,9 +76,16 @@ def test_mark_done_sets_status_done(conn):
         )
     conn.commit()
 
-    mark_done(conn, job_id)
+    mark_job_status(conn, job_id, "done")
 
     with conn.cursor() as cur:
         cur.execute("select status from jobs where id = %s", (job_id,))
         (status,) = cur.fetchone()
     assert status == "done"
+
+
+def test_handle_job_with_unknown_job_type_does_not_raise(conn):
+    # job_type without a registered handler (everything except
+    # process_capture, for now) is a no-op, not a failure - see
+    # handle_job's docstring comment in worker/main.py.
+    handle_job(conn, {"id": uuid.uuid4(), "job_type": "smoke_test", "payload": {}})

@@ -2,7 +2,13 @@
 name = "ai-core"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "openai>=1.54",
+    "psycopg[binary]>=3.2",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
 
 [build-system]
 requires = ["hatchling"]
