@@ -3,9 +3,9 @@ import { FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
+import { RichTextEditor } from "@/components/rich-text-editor";
 import { createNote } from "./actions";
 
 export default async function NotesPage() {
@@ -26,12 +26,7 @@ export default async function NotesPage() {
 
       <form action={createNote} className="space-y-3">
         <Input name="title" placeholder="Title" required />
-        <Textarea
-          name="content"
-          placeholder="Write in markdown..."
-          rows={4}
-          required
-        />
+        <RichTextEditor name="content" />
         <Button type="submit">Save note</Button>
       </form>
 

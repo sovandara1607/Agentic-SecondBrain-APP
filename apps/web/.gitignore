@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# self-hosted TinyMCE assets, copied from node_modules by
+# scripts/copy-tinymce.js (predev/prebuild) - see that file
+/public/tinymce

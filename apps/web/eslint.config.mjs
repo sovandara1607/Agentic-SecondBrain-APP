@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Copied by scripts/copy-tinymce.js (predev/prebuild), not our source.
+    "public/tinymce/**",
+    // Plain Node/CJS build scripts, not part of the Next.js app itself.
+    "scripts/**",
   ]),
 ]);
 
