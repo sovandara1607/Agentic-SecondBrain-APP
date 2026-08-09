@@ -238,6 +238,18 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
+-- Backfill: every user_id column in this schema references profiles(id),
+-- not auth.users(id) directly, so any auth.users row created before this
+-- trigger existed (e.g. a signup landing in the window between the auth
+-- service coming up and this migration applying) is left with no profile
+-- row - every insert for that account then fails its foreign key check,
+-- silently in the app unless the caller checks the error. Idempotent, safe
+-- to re-run: catches any such orphan on every (re)apply of this migration.
+insert into public.profiles (id, full_name)
+select id, raw_user_meta_data ->> 'full_name'
+from auth.users u
+where not exists (select 1 from public.profiles p where p.id = u.id);
+
 -- Row level security, standard four-policy pattern per tenant table.
 -- profiles is deliberately excluded from this array: it has no user_id
 -- column (its id IS the user id), so the generic 'auth.uid() = user_id'
