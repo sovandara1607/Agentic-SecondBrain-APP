@@ -1,19 +1,63 @@
+import Link from "next/link";
 import { CheckSquare, Square } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
 import { DeleteButton } from "@/components/delete-button";
+import { PriorityBadge } from "@/components/priority-badge";
 import { createTask, toggleTaskDone, deleteTask } from "./actions";
 
-export default async function TasksPage() {
+const STATUS_FILTERS = [
+  { value: "all", label: "All" },
+  { value: "open", label: "Open" },
+  { value: "done", label: "Done" },
+] as const;
+
+const SORTS = [
+  { value: "priority", label: "Priority" },
+  { value: "deadline", label: "Deadline" },
+  { value: "newest", label: "Newest" },
+] as const;
+
+function isOverdue(deadline: string | null, status: string) {
+  return Boolean(deadline) && status !== "done" && new Date(deadline!) < new Date();
+}
+
+export default async function TasksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; sort?: string }>;
+}) {
+  const { status = "all", sort = "priority" } = await searchParams;
   const supabase = await createClient();
-  const { data: tasks } = await supabase
+
+  const { data: projects } = await supabase
+    .from("projects")
+    .select("id, name")
+    .order("name");
+
+  let query = supabase
     .from("tasks")
-    .select("id, title, status, priority, deadline, created_at")
-    .order("created_at", { ascending: false });
+    .select("id, title, status, priority, deadline, projects(id, name)");
+
+  if (status === "open") query = query.eq("status", "open");
+  if (status === "done") query = query.eq("status", "done");
+
+  if (sort === "deadline") {
+    query = query.order("deadline", { ascending: true, nullsFirst: false });
+  } else if (sort === "newest") {
+    query = query.order("created_at", { ascending: false });
+  } else {
+    query = query
+      .order("priority", { ascending: true })
+      .order("deadline", { ascending: true, nullsFirst: false });
+  }
+
+  const { data: tasks } = await query;
 
   return (
     <div className="space-y-6">
@@ -24,15 +68,79 @@ export default async function TasksPage() {
         </p>
       </div>
 
-      <form action={createTask} className="flex gap-2">
-        <Input name="title" placeholder="Add a task..." required />
+      <form action={createTask} className="flex flex-wrap gap-2">
+        <Input
+          name="title"
+          placeholder="Add a task..."
+          required
+          className="min-w-48 flex-1"
+        />
+        <Select name="priority" defaultValue="3" className="w-36">
+          <option value="1">P1 · Highest</option>
+          <option value="2">P2 · High</option>
+          <option value="3">P3 · Medium</option>
+          <option value="4">P4 · Low</option>
+          <option value="5">P5 · Lowest</option>
+        </Select>
+        <Input name="deadline" type="date" className="w-40" />
+        <Select name="project_id" defaultValue="" className="w-40">
+          <option value="">No project</option>
+          {projects?.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </Select>
         <Button type="submit">Add</Button>
       </form>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-1">
+          {STATUS_FILTERS.map((f) => (
+            <Link
+              key={f.value}
+              href={f.value === "all" ? `/tasks?sort=${sort}` : `/tasks?status=${f.value}&sort=${sort}`}
+            >
+              <Button
+                type="button"
+                variant={status === f.value ? "secondary" : "ghost"}
+                size="sm"
+              >
+                {f.label}
+              </Button>
+            </Link>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          Sort by
+          <div className="flex gap-1">
+            {SORTS.map((s) => (
+              <Link
+                key={s.value}
+                href={status === "all" ? `/tasks?sort=${s.value}` : `/tasks?status=${status}&sort=${s.value}`}
+              >
+                <Button
+                  type="button"
+                  variant={sort === s.value ? "secondary" : "ghost"}
+                  size="sm"
+                >
+                  {s.label}
+                </Button>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
 
       <div className="space-y-2">
         {tasks?.length ? (
           tasks.map((task) => {
             const done = task.status === "done";
+            const project = task.projects as unknown as {
+              id: string;
+              name: string;
+            } | null;
+            const overdue = isOverdue(task.deadline, task.status);
             return (
               <Card key={task.id}>
                 <CardContent className="flex items-center gap-3">
@@ -55,11 +163,23 @@ export default async function TasksPage() {
                       )}
                     </button>
                   </form>
-                  <p
-                    className={`flex-1 truncate text-sm ${done ? "text-muted-foreground line-through" : ""}`}
+                  <Link
+                    href={`/tasks/${task.id}`}
+                    className={`flex-1 truncate text-sm hover:underline ${done ? "text-muted-foreground line-through" : ""}`}
                   >
                     {task.title}
-                  </p>
+                  </Link>
+                  {project && (
+                    <Badge variant="muted">{project.name}</Badge>
+                  )}
+                  {task.deadline && (
+                    <span
+                      className={`text-xs ${overdue ? "font-medium text-destructive" : "text-muted-foreground"}`}
+                    >
+                      {new Date(task.deadline).toLocaleDateString()}
+                    </span>
+                  )}
+                  <PriorityBadge priority={task.priority} />
                   <Badge variant="muted">{task.status}</Badge>
                   <DeleteButton
                     action={deleteTask}
