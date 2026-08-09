@@ -647,11 +647,19 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "ai-core", editable = "packages/ai_core" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.3" }]
 
 [[package]]
 name = "starlette"
