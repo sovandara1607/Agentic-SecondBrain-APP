@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { NavSidebar } from "@/components/nav-sidebar";
+import { SignOutButton } from "@/components/sign-out-button";
 
 export default async function AppLayout({
   children,
@@ -16,11 +18,22 @@ export default async function AppLayout({
   }
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="w-56 border-r p-4">
-        <p className="text-sm font-medium">Second Brain</p>
+    <div className="flex min-h-screen bg-background">
+      <aside className="flex w-56 flex-col border-r border-sidebar-border bg-sidebar">
+        <div className="p-4">
+          <p className="text-sm font-semibold text-sidebar-foreground">
+            Second Brain
+          </p>
+        </div>
+        <NavSidebar />
       </aside>
-      <div className="flex-1 p-6">{children}</div>
+      <div className="flex flex-1 flex-col">
+        <header className="flex items-center justify-between border-b px-6 py-3">
+          <span className="text-sm text-muted-foreground">{user.email}</span>
+          <SignOutButton />
+        </header>
+        <main className="flex-1 p-6">{children}</main>
+      </div>
     </div>
   );
 }
