@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { GitHubOAuthButton } from "@/components/github-oauth-button";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -48,6 +49,12 @@ export default function SignupPage() {
         <Button type="submit" className="w-full">
           Sign up
         </Button>
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-xs text-muted-foreground">or</span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+        <GitHubOAuthButton />
       </form>
     </main>
   );

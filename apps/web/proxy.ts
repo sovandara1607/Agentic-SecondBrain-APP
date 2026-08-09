@@ -15,11 +15,10 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       // Pin the auth cookie name explicitly. @supabase/ssr otherwise derives
-      // it from the client's own supabaseUrl hostname (`sb-<hostname>-auth-token`),
-      // which would differ between the browser client (NEXT_PUBLIC_SUPABASE_URL,
-      // "localhost") and this server-side client (SUPABASE_URL, "kong" under
-      // Docker Compose) - a mismatch that makes the server unable to find the
-      // cookie the browser set. Must match lib/supabase/client.ts and server.ts.
+      // it from the client's own supabaseUrl hostname (`sb-<hostname>-auth-token`).
+      // Pinning keeps the browser client and this server-side client aligned
+      // even though Docker uses different Supabase URLs outside vs. inside the
+      // container. Must match lib/supabase/client.ts and server.ts.
       cookieOptions: { name: "sb-auth-token" },
       cookies: {
         getAll() {

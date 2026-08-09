@@ -8,7 +8,7 @@ export async function createClient() {
     // SUPABASE_URL, when set, overrides the browser-facing
     // NEXT_PUBLIC_SUPABASE_URL for this server-side client. Needed under
     // Docker Compose (Task 10): the browser reaches Supabase via the host's
-    // published Kong port ("http://localhost:8000"), but that same URL is
+    // published Kong port ("http://127.0.0.1:8000"), but that same URL is
     // unreachable from *inside* the web container - "localhost" there
     // resolves to the container itself, not the Kong container. See
     // infra/docker-compose.yml's web service for the container-internal value.

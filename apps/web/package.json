@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "predev": "node scripts/copy-tinymce.js",
-    "dev": "next dev",
+    "dev": "TZ=Asia/Phnom_Penh next dev",
     "prebuild": "node scripts/copy-tinymce.js",
     "build": "next build",
-    "start": "next start",
+    "start": "TZ=Asia/Phnom_Penh next start",
     "lint": "eslint"
   },
   "dependencies": {
