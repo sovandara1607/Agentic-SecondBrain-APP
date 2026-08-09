@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { NavSidebar } from "@/components/nav-sidebar";
-import { SignOutButton } from "@/components/sign-out-button";
+import { AppSidebar } from "@/components/app-sidebar";
+import { PageBreadcrumb } from "@/components/page-breadcrumb";
 
 export default async function AppLayout({
   children,
@@ -17,20 +17,28 @@ export default async function AppLayout({
     redirect("/login");
   }
 
+  const [{ count: pendingCaptures }, { data: profile }] = await Promise.all([
+    supabase
+      .from("captures")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "pending"),
+    supabase
+      .from("profiles")
+      .select("subscription_tier")
+      .eq("id", user.id)
+      .single(),
+  ]);
+
   return (
     <div className="flex min-h-screen bg-background">
-      <aside className="flex w-56 flex-col border-r border-sidebar-border bg-sidebar">
-        <div className="p-4">
-          <p className="text-sm font-semibold text-sidebar-foreground">
-            Second Brain
-          </p>
-        </div>
-        <NavSidebar />
-      </aside>
+      <AppSidebar
+        email={user.email ?? ""}
+        tier={profile?.subscription_tier ?? "free"}
+        badges={{ inbox: pendingCaptures ?? 0 }}
+      />
       <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b px-6 py-3">
-          <span className="text-sm text-muted-foreground">{user.email}</span>
-          <SignOutButton />
+        <header className="flex items-center border-b px-6 py-3">
+          <PageBreadcrumb />
         </header>
         <main className="flex-1 p-6">{children}</main>
       </div>

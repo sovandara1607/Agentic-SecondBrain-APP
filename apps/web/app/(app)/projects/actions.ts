@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
@@ -8,15 +9,16 @@ export async function createProject(formData: FormData) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) redirect("/login");
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   const overview = String(formData.get("overview") ?? "").trim();
 
-  await supabase
+  const { error } = await supabase
     .from("projects")
     .insert({ user_id: user.id, name, overview: overview || null });
+  if (error) throw new Error(`Couldn't create the project: ${error.message}`);
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");

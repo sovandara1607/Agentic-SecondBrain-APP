@@ -9,19 +9,20 @@ export async function createNote(formData: FormData) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) redirect("/login");
 
   const title = String(formData.get("title") ?? "").trim();
   const content = String(formData.get("content") ?? "").trim();
   if (!title || !content) return;
 
-  const { data: note } = await supabase
+  const { data: note, error } = await supabase
     .from("notes")
     .insert({ user_id: user.id, title, content })
     .select("id")
     .single();
+  if (error) throw new Error(`Couldn't save the note: ${error.message}`);
 
   revalidatePath("/notes");
   revalidatePath("/dashboard");
-  if (note) redirect(`/notes/${note.id}`);
+  redirect(`/notes/${note.id}`);
 }
