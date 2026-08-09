@@ -7,8 +7,16 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  /* SF Pro via the system-font stack (real SF Pro on Apple devices, native
+     sans elsewhere), Kantumruy Pro as the webfont fallback for Khmer glyphs
+     the system stack can't render (also used directly - see --font-khmer). */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    system-ui, var(--font-kantumruy-pro), sans-serif;
+  --font-khmer: var(--font-kantumruy-pro), var(--font-sans);
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
