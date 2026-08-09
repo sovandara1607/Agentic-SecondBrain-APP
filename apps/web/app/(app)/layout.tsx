@@ -30,17 +30,17 @@ export default async function AppLayout({
   ]);
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-dvh bg-background">
       <AppSidebar
         email={user.email ?? ""}
         tier={profile?.subscription_tier ?? "free"}
         badges={{ inbox: pendingCaptures ?? 0 }}
       />
-      <div className="flex flex-1 flex-col">
-        <header className="flex items-center border-b px-6 py-3">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 items-center border-b px-6 py-3">
           <PageBreadcrumb />
         </header>
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>
   );

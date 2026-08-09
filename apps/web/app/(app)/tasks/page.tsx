@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { createTask, toggleTaskDone } from "./actions";
+import { EmptyState } from "@/components/empty-state";
+import { DeleteButton } from "@/components/delete-button";
+import { createTask, toggleTaskDone, deleteTask } from "./actions";
 
 export default async function TasksPage() {
   const supabase = await createClient();
@@ -16,7 +18,7 @@ export default async function TasksPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Tasks</h1>
+        <h1 className="font-heading text-2xl font-semibold">Tasks</h1>
         <p className="text-sm text-muted-foreground">
           What needs to get done.
         </p>
@@ -59,12 +61,22 @@ export default async function TasksPage() {
                     {task.title}
                   </p>
                   <Badge variant="muted">{task.status}</Badge>
+                  <DeleteButton
+                    action={deleteTask}
+                    id={task.id}
+                    confirmMessage={`Delete "${task.title}"?`}
+                    label="Delete task"
+                  />
                 </CardContent>
               </Card>
             );
           })
         ) : (
-          <p className="text-sm text-muted-foreground">No tasks yet.</p>
+          <EmptyState
+            icon={CheckSquare}
+            title="No tasks yet"
+            description="Add one above, or create it from a capture in the Inbox once the pipeline is wired up."
+          />
         )}
       </div>
     </div>

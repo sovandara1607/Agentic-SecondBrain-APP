@@ -23,3 +23,20 @@ export async function createProject(formData: FormData) {
   revalidatePath("/projects");
   revalidatePath("/dashboard");
 }
+
+export async function deleteProject(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const { error } = await supabase.from("projects").delete().eq("id", id);
+  if (error) throw new Error(`Couldn't delete the project: ${error.message}`);
+
+  revalidatePath("/projects");
+  revalidatePath("/dashboard");
+}

@@ -23,6 +23,7 @@ import {
 
 import { cn } from "@/lib/utils";
 import { signOut } from "@/app/(app)/actions";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type NavLeaf = {
   id: string;
@@ -269,7 +270,7 @@ export function AppSidebar({
           )}
         </button>
 
-        <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3">
+        <nav className="flex flex-col gap-4 overflow-y-auto px-3">
           {NAV_GROUPS.map((group, i) => (
             <div key={i} className="flex flex-col gap-0.5">
               {group.heading && !collapsed && (
@@ -291,15 +292,16 @@ export function AppSidebar({
               ))}
             </div>
           ))}
-        </nav>
 
-        <div className="border-t border-sidebar-border p-3">
-          <NavRow
-            item={SETTINGS_ITEM}
-            collapsed={collapsed}
-            active={pathname === SETTINGS_ITEM.href}
-          />
-        </div>
+          <div className="flex flex-col gap-0.5 border-t border-sidebar-border pt-3">
+            <ThemeToggle collapsed={collapsed} />
+            <NavRow
+              item={SETTINGS_ITEM}
+              collapsed={collapsed}
+              active={pathname === SETTINGS_ITEM.href}
+            />
+          </div>
+        </nav>
       </aside>
 
       {paletteOpen && (

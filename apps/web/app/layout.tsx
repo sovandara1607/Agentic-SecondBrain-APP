@@ -1,6 +1,14 @@
 import type { Metadata } from "next";
 import { Kantumruy_Pro } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
+
+// Applies the persisted (or system-default) theme to <html> before
+// hydration/paint, so there's no flash of the wrong theme. Must run
+// beforeInteractive - by the time React hydrates ThemeToggle, this has
+// already set the class it reads. Keep the storage key in sync with
+// components/theme-toggle.tsx.
+const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('second-brain:theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d);}catch(e){}})();`;
 
 // SF Pro itself isn't licensed for general web embedding, so it's not
 // loaded as a webfont here - globals.css pulls it in via the standard
@@ -25,7 +33,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${kantumruyPro.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <Script id="theme-init" strategy="beforeInteractive">
+          {THEME_INIT_SCRIPT}
+        </Script>
+        {children}
+      </body>
     </html>
   );
 }

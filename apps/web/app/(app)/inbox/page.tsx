@@ -1,10 +1,13 @@
+import { Inbox } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { createCapture } from "./actions";
+import { EmptyState } from "@/components/empty-state";
+import { DeleteButton } from "@/components/delete-button";
+import { createCapture, deleteCapture } from "./actions";
 
 const STATUS_VARIANT: Record<
   string,
@@ -27,7 +30,7 @@ export default async function InboxPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Inbox</h1>
+        <h1 className="font-heading text-2xl font-semibold">Inbox</h1>
         <p className="text-sm text-muted-foreground">
           Drop in text or a link. The processing pipeline organizes it later.
         </p>
@@ -53,14 +56,26 @@ export default async function InboxPage() {
                     {new Date(capture.created_at).toLocaleString()}
                   </p>
                 </div>
-                <Badge variant={STATUS_VARIANT[capture.status] ?? "muted"}>
-                  {capture.status}
-                </Badge>
+                <span className="flex shrink-0 items-center gap-3">
+                  <Badge variant={STATUS_VARIANT[capture.status] ?? "muted"}>
+                    {capture.status}
+                  </Badge>
+                  <DeleteButton
+                    action={deleteCapture}
+                    id={capture.id}
+                    confirmMessage="Delete this capture?"
+                    label="Delete capture"
+                  />
+                </span>
               </CardContent>
             </Card>
           ))
         ) : (
-          <p className="text-sm text-muted-foreground">Nothing captured yet.</p>
+          <EmptyState
+            icon={Inbox}
+            title="Nothing captured yet"
+            description="Drop in a thought or paste a link above - it lands here first."
+          />
         )}
       </div>
     </div>

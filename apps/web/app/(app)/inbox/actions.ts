@@ -26,3 +26,20 @@ export async function createCapture(formData: FormData) {
   revalidatePath("/inbox");
   revalidatePath("/dashboard");
 }
+
+export async function deleteCapture(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const { error } = await supabase.from("captures").delete().eq("id", id);
+  if (error) throw new Error(`Couldn't delete the capture: ${error.message}`);
+
+  revalidatePath("/inbox");
+  revalidatePath("/dashboard");
+}

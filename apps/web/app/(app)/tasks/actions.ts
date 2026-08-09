@@ -46,3 +46,20 @@ export async function toggleTaskDone(formData: FormData) {
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
 }
+
+export async function deleteTask(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const { error } = await supabase.from("tasks").delete().eq("id", id);
+  if (error) throw new Error(`Couldn't delete the task: ${error.message}`);
+
+  revalidatePath("/tasks");
+  revalidatePath("/dashboard");
+}

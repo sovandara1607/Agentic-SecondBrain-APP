@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/empty-state";
 import { createNote } from "./actions";
 
 export default async function NotesPage() {
@@ -16,7 +18,7 @@ export default async function NotesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Notes</h1>
+        <h1 className="font-heading text-2xl font-semibold">Notes</h1>
         <p className="text-sm text-muted-foreground">
           Markdown notes, written directly or generated from captures.
         </p>
@@ -48,7 +50,11 @@ export default async function NotesPage() {
             </Link>
           ))
         ) : (
-          <p className="text-sm text-muted-foreground">No notes yet.</p>
+          <EmptyState
+            icon={FileText}
+            title="No notes yet"
+            description="Write one above, or capture something in the Inbox first."
+          />
         )}
       </div>
     </div>

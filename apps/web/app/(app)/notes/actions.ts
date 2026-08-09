@@ -26,3 +26,44 @@ export async function createNote(formData: FormData) {
   revalidatePath("/dashboard");
   redirect(`/notes/${note.id}`);
 }
+
+export async function updateNote(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const id = String(formData.get("id") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+  const content = String(formData.get("content") ?? "").trim();
+  if (!id || !title || !content) return;
+
+  const { error } = await supabase
+    .from("notes")
+    .update({ title, content })
+    .eq("id", id);
+  if (error) throw new Error(`Couldn't save changes: ${error.message}`);
+
+  revalidatePath(`/notes/${id}`);
+  revalidatePath("/notes");
+  revalidatePath("/dashboard");
+}
+
+export async function deleteNote(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const { error } = await supabase.from("notes").delete().eq("id", id);
+  if (error) throw new Error(`Couldn't delete the note: ${error.message}`);
+
+  revalidatePath("/notes");
+  revalidatePath("/dashboard");
+  redirect("/notes");
+}
