@@ -1,0 +1,9 @@
+:80 {
+  handle /api/* {
+    uri strip_prefix /api
+    reverse_proxy api:8001
+  }
+  handle {
+    reverse_proxy web:3000
+  }
+}

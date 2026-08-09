@@ -5,9 +5,19 @@ export async function createClient() {
   const cookieStore = await cookies();
 
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    // SUPABASE_URL, when set, overrides the browser-facing
+    // NEXT_PUBLIC_SUPABASE_URL for this server-side client. Needed under
+    // Docker Compose (Task 10): the browser reaches Supabase via the host's
+    // published Kong port ("http://localhost:8000"), but that same URL is
+    // unreachable from *inside* the web container - "localhost" there
+    // resolves to the container itself, not the Kong container. See
+    // infra/docker-compose.yml's web service for the container-internal value.
+    process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Pin the auth cookie name explicitly - see the matching comment in
+      // proxy.ts for why. Must match proxy.ts and client.ts.
+      cookieOptions: { name: "sb-auth-token" },
       cookies: {
         getAll() {
           return cookieStore.getAll();

@@ -1,0 +1,51 @@
+include:
+  - path: ./supabase/docker-compose.yml
+
+services:
+  web:
+    build:
+      context: ../apps/web
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      # Overrides NEXT_PUBLIC_SUPABASE_URL for server-side use only (proxy.ts,
+      # lib/supabase/server.ts): "localhost:8000" is the browser's route to
+      # Kong (via the host's published port) but is unreachable from inside
+      # this container, which must reach Kong by its Compose service name.
+      SUPABASE_URL: http://kong:8000
+    ports:
+      - "3000:3000"
+
+  api:
+    build:
+      context: ../
+      dockerfile: apps/api/Dockerfile
+    environment:
+      # DATABASE_URL_INTERNAL, not DATABASE_URL: "localhost" in the latter resolves
+      # to this container, not the Docker host - see the .env comment next to it.
+      DATABASE_URL: ${DATABASE_URL_INTERNAL}
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "8001:8001"
+    depends_on:
+      - db
+
+  worker:
+    build:
+      context: ../
+      dockerfile: worker/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL_INTERNAL}
+    depends_on:
+      - db
+
+  caddy:
+    image: caddy:2
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+    ports:
+      - "80:80"
+    depends_on:
+      - web
+      - api

@@ -8,9 +8,19 @@ export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    // See the matching comment in lib/supabase/server.ts: this proxy runs
+    // server-side inside the web container under Docker Compose, so it needs
+    // the container-internal Supabase URL, not the browser-facing one.
+    process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Pin the auth cookie name explicitly. @supabase/ssr otherwise derives
+      // it from the client's own supabaseUrl hostname (`sb-<hostname>-auth-token`),
+      // which would differ between the browser client (NEXT_PUBLIC_SUPABASE_URL,
+      // "localhost") and this server-side client (SUPABASE_URL, "kong" under
+      // Docker Compose) - a mismatch that makes the server unable to find the
+      // cookie the browser set. Must match lib/supabase/client.ts and server.ts.
+      cookieOptions: { name: "sb-auth-token" },
       cookies: {
         getAll() {
           return request.cookies.getAll();
