@@ -32,6 +32,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${kantumruyPro.variable} h-full antialiased`}
+      // The beforeInteractive theme-init script below adds/removes "dark"
+      // on this element before hydration runs, on purpose (that's what
+      // avoids a flash of the wrong theme) - React can't know that ahead
+      // of time, so it flags the class mismatch. This is the standard,
+      // documented mitigation for exactly this pattern, not a real bug.
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
         <Script id="theme-init" strategy="beforeInteractive">

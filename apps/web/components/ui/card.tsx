@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 function Card({
   className,
   size = "default",
+  style,
   ...props
 }: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
   return (
@@ -12,9 +13,12 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        // Like a paper card sitting on a desk: real elevation (not a flat
+        // ring) plus a faint paper grain, instead of a bare flat rectangle.
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl border border-border/60 bg-card py-(--card-spacing) text-sm text-card-foreground shadow-[var(--shadow-raised)] [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
         className
       )}
+      style={{ backgroundImage: "var(--texture-paper)", ...style }}
       {...props}
     />
   )

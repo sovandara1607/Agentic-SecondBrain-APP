@@ -85,11 +85,17 @@ function NavRow({
         "group flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-sm transition-colors",
         collapsed && "justify-center px-0",
         active
-          ? "bg-primary/10 font-medium text-primary"
+          ? "bg-black/10 font-medium text-sidebar-primary shadow-[var(--shadow-inset)]"
           : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
       )}
     >
-      <item.icon className="size-4 shrink-0" strokeWidth={1.75} />
+      <item.icon
+        className={cn(
+          "size-4 shrink-0",
+          active && "drop-shadow-[0_1px_0_oklch(1_0_0/20%)]",
+        )}
+        strokeWidth={1.75}
+      />
       {!collapsed && <span className="flex-1 truncate">{item.title}</span>}
       {!collapsed && badge ? (
         <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-[11px] font-medium text-primary">
@@ -179,9 +185,13 @@ export function AppSidebar({
     <>
       <aside
         className={cn(
-          "flex h-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 motion-reduce:transition-none",
+          // Leather cover: a grain texture plus a dashed "stitch" a few
+          // px in from the spine edge, the way a bound journal's cover
+          // is stitched along its border.
+          "relative flex h-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar shadow-[2px_0_6px_-2px_oklch(0_0_0/25%)] transition-[width] duration-200 before:pointer-events-none before:absolute before:inset-y-3 before:right-2 before:w-px before:border-r before:border-dashed before:border-sidebar-foreground/15 motion-reduce:transition-none",
           collapsed ? "w-16" : "w-60",
         )}
+        style={{ backgroundImage: "var(--texture-leather)" }}
       >
         <div className="flex items-center gap-1 p-3">
           <button
@@ -192,7 +202,7 @@ export function AppSidebar({
               collapsed && "justify-center",
             )}
           >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-gradient-to-b from-[color-mix(in_oklch,var(--primary),white_16%)] to-primary text-xs font-semibold text-primary-foreground shadow-[var(--shadow-raised-sm)]">
               {email.charAt(0).toUpperCase()}
             </span>
             {!collapsed && (
@@ -255,8 +265,8 @@ export function AppSidebar({
           onClick={openPalette}
           title={collapsed ? "Search (⌘K)" : undefined}
           className={cn(
-            "mx-3 mb-3 flex items-center gap-2.5 rounded-md border border-sidebar-border px-2.5 py-[7px] text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground",
-            collapsed && "mx-auto justify-center border-0 px-1.5",
+            "mx-3 mb-3 flex items-center gap-2.5 rounded-md border border-sidebar-border bg-black/10 px-2.5 py-[7px] text-sm text-muted-foreground shadow-[var(--shadow-inset)] transition-colors hover:bg-black/15 hover:text-foreground",
+            collapsed && "mx-auto justify-center border-0 bg-transparent px-1.5 shadow-none",
           )}
         >
           <Search className="size-4 shrink-0" strokeWidth={1.75} />

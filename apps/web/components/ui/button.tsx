@@ -8,15 +8,19 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        // Raised/tactile: a top-lit gradient + --shadow-raised (light
+        // catch above, shadow below) reads as a physical, pressable key.
+        // Pressing swaps to --shadow-inset, like the key sinking in.
+        default:
+          "border-[oklch(0_0_0/12%)] bg-gradient-to-b from-[color-mix(in_oklch,var(--primary),white_14%)] to-primary text-primary-foreground shadow-[var(--shadow-raised)] hover:from-[color-mix(in_oklch,var(--primary),white_20%)] active:shadow-[var(--shadow-inset)]",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border-border bg-gradient-to-b from-[color-mix(in_oklch,var(--card),white_6%)] to-card shadow-[var(--shadow-raised-sm)] hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground active:shadow-[var(--shadow-inset)] dark:border-input dark:hover:bg-input/50",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "border-[oklch(0_0_0/8%)] bg-gradient-to-b from-[color-mix(in_oklch,var(--secondary),white_10%)] to-secondary text-secondary-foreground shadow-[var(--shadow-raised-sm)] hover:from-[color-mix(in_oklch,var(--secondary),white_16%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground active:shadow-[var(--shadow-inset)]",
         ghost:
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+          "border-[oklch(0_0_0/8%)] bg-gradient-to-b from-[color-mix(in_oklch,var(--destructive),white_75%)] to-[color-mix(in_oklch,var(--destructive),white_65%)] text-destructive shadow-[var(--shadow-raised-sm)] hover:to-[color-mix(in_oklch,var(--destructive),white_58%)] focus-visible:border-destructive/40 focus-visible:ring-destructive/20 active:shadow-[var(--shadow-inset)] dark:from-[color-mix(in_oklch,var(--destructive),black_35%)] dark:to-[color-mix(in_oklch,var(--destructive),black_45%)] dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
