@@ -22,14 +22,23 @@ services:
       context: ../
       dockerfile: apps/api/Dockerfile
     environment:
-      # DATABASE_URL_INTERNAL, not DATABASE_URL: "localhost" in the latter resolves
-      # to this container, not the Docker host - see the .env comment next to it.
+      # Container-internal DATABASE_URL - MUST be DATABASE_URL_INTERNAL, not
+      # DATABASE_URL: "localhost" in the latter resolves to this container,
+      # not the Docker host. See the .env / .env.example comments next to
+      # both variables for the full rule.
       DATABASE_URL: ${DATABASE_URL_INTERNAL}
       JWT_SECRET: ${JWT_SECRET}
     ports:
       - "8001:8001"
     depends_on:
-      - db
+      # DATABASE_URL_INTERNAL routes through Supavisor (the pooler), not
+      # straight to `db`, so wait on Supavisor's own healthcheck - it
+      # already depends on `db: condition: service_healthy` itself, so this
+      # transitively covers both. Plain `depends_on: - db` (start-order only)
+      # let this container start before Supavisor was accepting connections
+      # on a fast/cached `up`, and with no restart policy it stayed down.
+      supavisor:
+        condition: service_healthy
 
   worker:
     build:
@@ -38,7 +47,16 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL_INTERNAL}
     depends_on:
-      - db
+      # See the matching comment on the api service above.
+      supavisor:
+        condition: service_healthy
+    # Defensive backstop: worker/main.py connects eagerly and unretried at
+    # process start (Task 9, already reviewed - not touched here). The
+    # depends_on above should prevent the race in practice, but if Supavisor
+    # is ever slow to report healthy for another reason, this makes the
+    # container self-heal instead of staying down and needing manual
+    # intervention (the plan's Definition of Done requires none).
+    restart: on-failure
 
   caddy:
     image: caddy:2
