@@ -27,12 +27,10 @@ def _vector(seed: float) -> list[float]:
     return [seed] * EMBEDDING_DIMENSIONS
 
 
-class FakeOpenAI:
-    """Stands in for openai.OpenAI - process_capture only calls
-    client.chat.completions.create(...) (reading
-    response.choices[0].message.content) and
-    client.embeddings.create(...) (reading response.data[0].embedding),
-    so that's all this fakes."""
+class FakeGeminiClient:
+    """Stands in for ai_core.client.GeminiClient - process_capture only calls
+    client.chat.completions.create(...) (reading response.content) and
+    client.embeddings.create(...) (reading response.embedding)."""
 
     def __init__(self, payload: dict, embedding: list[float] | None = None):
         self._payload = payload
@@ -43,11 +41,8 @@ class FakeOpenAI:
 
     def create(self, **kwargs):
         if "messages" in kwargs:
-            message = type("Message", (), {"content": json.dumps(self._payload)})
-            choice = type("Choice", (), {"message": message})
-            return type("Response", (), {"choices": [choice]})
-        item = type("Item", (), {"embedding": self._embedding})
-        return type("Response", (), {"data": [item]})
+            return type("ChatCompletion", (), {"content": json.dumps(self._payload)})
+        return type("EmbeddingResponse", (), {"embedding": self._embedding})
 
 
 @pytest.fixture
@@ -86,7 +81,7 @@ def _insert_capture(conn, raw_text: str) -> uuid.UUID:
 
 def test_process_capture_creates_note_tags_and_task(conn):
     capture_id = _insert_capture(conn, "Call the dentist by Friday to reschedule.")
-    fake = FakeOpenAI(
+    fake = FakeGeminiClient(
         {
             **BASE_PAYLOAD,
             "title": "Reschedule dentist appointment",
@@ -158,7 +153,7 @@ def test_process_capture_creates_note_tags_and_task(conn):
 
 def test_process_capture_non_actionable_creates_no_task(conn):
     capture_id = _insert_capture(conn, "Interesting article about tide pools.")
-    fake = FakeOpenAI(
+    fake = FakeGeminiClient(
         {
             **BASE_PAYLOAD,
             "title": "Tide pools article",
@@ -177,7 +172,7 @@ def test_process_capture_non_actionable_creates_no_task(conn):
 
 def test_process_capture_needs_review_sets_capture_status(conn):
     capture_id = _insert_capture(conn, "asdkjf partial thought, unclear")
-    fake = FakeOpenAI(
+    fake = FakeGeminiClient(
         {
             **BASE_PAYLOAD,
             "title": "Unclear note",
@@ -194,14 +189,14 @@ def test_process_capture_needs_review_sets_capture_status(conn):
 
 
 def test_process_capture_raises_for_missing_capture(conn):
-    fake = FakeOpenAI(BASE_PAYLOAD)
+    fake = FakeGeminiClient(BASE_PAYLOAD)
     with pytest.raises(ValueError, match="not found"):
         process_capture(conn, uuid.uuid4(), client=fake)
 
 
 def test_process_capture_creates_entities_and_links_them(conn):
     capture_id = _insert_capture(conn, "Had lunch with Sarah to discuss the Q3 roadmap.")
-    fake = FakeOpenAI(
+    fake = FakeGeminiClient(
         {
             **BASE_PAYLOAD,
             "title": "Lunch with Sarah",
@@ -244,7 +239,7 @@ def test_process_capture_matches_existing_project(conn):
     conn.commit()
 
     capture_id = _insert_capture(conn, "Finalize the homepage copy for the relaunch.")
-    fake = FakeOpenAI(
+    fake = FakeGeminiClient(
         {
             **BASE_PAYLOAD,
             "title": "Homepage copy",
@@ -267,7 +262,7 @@ def test_process_capture_matches_existing_project(conn):
 
 def test_process_capture_decision_sets_note_type(conn):
     capture_id = _insert_capture(conn, "We decided to go with the vendor proposal.")
-    fake = FakeOpenAI(
+    fake = FakeGeminiClient(
         {
             **BASE_PAYLOAD,
             "title": "Vendor decision",
@@ -290,7 +285,7 @@ def test_process_capture_links_related_notes_above_threshold(conn):
     process_capture(
         conn,
         capture_1,
-        client=FakeOpenAI(
+        client=FakeGeminiClient(
             {**BASE_PAYLOAD, "title": "Design system colors", "summary": "Color palette notes."},
             embedding=_vector(0.5),
         ),
@@ -300,7 +295,7 @@ def test_process_capture_links_related_notes_above_threshold(conn):
     result = process_capture(
         conn,
         capture_2,
-        client=FakeOpenAI(
+        client=FakeGeminiClient(
             {**BASE_PAYLOAD, "title": "More on colors", "summary": "More color palette notes."},
             embedding=_vector(0.5),
         ),

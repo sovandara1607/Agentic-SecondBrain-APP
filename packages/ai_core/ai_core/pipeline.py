@@ -32,20 +32,11 @@ import os
 import uuid
 from dataclasses import dataclass
 from datetime import date
+from typing import Any
 
 import psycopg
-from openai import OpenAI
+from ai_core.client import get_client, EMBEDDING_DIMENSIONS, CHAT_MODEL
 
-# Configurable because "the current best small/cheap model" changes over
-# time and shouldn't be hardcoded into a decision made once, today.
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-OPENAI_EMBEDDING_MODEL = os.environ.get(
-    "OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"
-)
-# Must match embeddings.embedding's column type (vector(768)) in the
-# migration. text-embedding-3-* models support the `dimensions` param to
-# truncate their native (larger) output to this size.
-EMBEDDING_DIMENSIONS = 768
 # link_related_notes: cosine similarity threshold and cap - "capped at a
 # small number of strongest links to keep the graph meaningful rather
 # than dense" per the design doc.
@@ -156,20 +147,20 @@ class PipelineResult:
     needs_review: bool
 
 
-def _extract(client: OpenAI, text: str, project_names: list[str]) -> dict:
+def _extract(client, text: str, project_names: list[str]) -> dict:
     system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
         today=date.today().isoformat(),
         projects=", ".join(project_names) if project_names else "(none yet)",
     )
     response = client.chat.completions.create(
-        model=OPENAI_MODEL,
+        model=CHAT_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text},
         ],
         response_format={"type": "json_schema", "json_schema": _RESPONSE_SCHEMA},
     )
-    return json.loads(response.choices[0].message.content)
+    return json.loads(response.content)
 
 
 def _upsert_tag(cur: psycopg.Cursor, user_id: uuid.UUID, name: str) -> uuid.UUID:
@@ -220,7 +211,7 @@ def _link(
 
 def _embed_and_link_related_notes(
     conn: psycopg.Connection,
-    client: OpenAI,
+    client,
     user_id: uuid.UUID,
     note_id: uuid.UUID,
     content: str,
@@ -229,11 +220,11 @@ def _embed_and_link_related_notes(
     now (chunk_index always 0) - real chunking for long documents is a
     further enhancement, not done here."""
     response = client.embeddings.create(
-        model=OPENAI_EMBEDDING_MODEL,
+        model="text-embedding-004",
         input=content,
         dimensions=EMBEDDING_DIMENSIONS,
     )
-    embedding = response.data[0].embedding
+    embedding = response.embedding
     vector_literal = "[" + ",".join(str(x) for x in embedding) + "]"
 
     with conn.cursor() as cur:
@@ -270,12 +261,12 @@ def _embed_and_link_related_notes(
 def process_capture(
     conn: psycopg.Connection,
     capture_id: uuid.UUID,
-    client: OpenAI | None = None,
+    client: Any | None = None,
 ) -> PipelineResult:
     """Runs the pipeline for one capture. Raises on failure - the caller
     (worker.main.handle_job) is responsible for catching that and marking
     the capture 'failed' with pipeline_error, not this function."""
-    client = client or OpenAI()
+    client = client or get_client()
 
     with conn.cursor() as cur:
         cur.execute(
@@ -373,8 +364,6 @@ def process_capture(
                 json.dumps({**extracted, "task_id": str(task_id) if task_id else None}),
             ),
         )
-
-    conn.commit()
 
     related_note_ids = _embed_and_link_related_notes(conn, client, user_id, note_id, text)
     conn.commit()

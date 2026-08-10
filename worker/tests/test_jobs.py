@@ -22,9 +22,11 @@ def conn():
                 """,
                 (TEST_USER_ID,),
             )
+            cur.execute("delete from jobs where user_id = %s", (TEST_USER_ID,))
         connection.commit()
         yield connection
         with connection.cursor() as cur:
+            cur.execute("delete from jobs where user_id = %s", (TEST_USER_ID,))
             cur.execute("delete from auth.users where id = %s", (TEST_USER_ID,))
         connection.commit()
 

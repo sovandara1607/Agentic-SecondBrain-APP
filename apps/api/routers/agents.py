@@ -5,11 +5,11 @@ import uuid
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from openai import OpenAI
 from pydantic import BaseModel
 
 from ai_core.agents.memory import query_memory_stream
-from ai_core.agents.planner import ProjectNotFoundError, decompose_project
+from ai_core.agents.planner import CycleDetectedError, ProjectNotFoundError, decompose_project
+from ai_core.client import get_client
 from core.auth import verify_jwt
 from core.config import get_settings
 
@@ -46,12 +46,13 @@ def memory_stream(
                     raise HTTPException(status_code=404, detail="conversation not found")
 
     def generate():
-        conn = psycopg.connect(get_settings().database_url)
+        conn = None
         # Seeded before the try block so the except handler always has a
         # value to log, even if the failure happens before a new
         # conversation id is assigned.
         conversation_id = body.conversation_id
         try:
+            conn = psycopg.connect(get_settings().database_url)
             with conn.cursor() as cur:
                 if body.conversation_id:
                     conversation_id = body.conversation_id
@@ -86,7 +87,7 @@ def memory_stream(
                 )
                 conn.commit()
 
-            client = OpenAI()
+            client = get_client()
             tokens, citations = query_memory_stream(
                 conn, client, uuid.UUID(user_id), body.query, history
             )
@@ -126,7 +127,8 @@ def memory_stream(
                 {"type": "error", "message": "Something went wrong answering that. Try again."}
             )
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -143,12 +145,16 @@ def planner_decompose(body: PlannerDecomposeRequest, user_id: str = Depends(veri
     except ValueError:
         raise HTTPException(status_code=400, detail="invalid project_id")
 
-    conn = psycopg.connect(get_settings().database_url)
+    conn = None
     try:
-        client = OpenAI()
+        conn = psycopg.connect(get_settings().database_url)
+        client = get_client()
         result = decompose_project(conn, client, user_id, project_uuid, body.goal)
     except ProjectNotFoundError:
         raise HTTPException(status_code=404, detail="project not found")
+    except CycleDetectedError as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception:  # noqa: BLE001 - never leak exception internals to the client
         conn.rollback()
         logger.exception("planner_decompose failed for project %s", project_uuid)
@@ -156,7 +162,8 @@ def planner_decompose(body: PlannerDecomposeRequest, user_id: str = Depends(veri
             status_code=500, detail="Something went wrong decomposing that goal. Try again."
         )
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
     return {
         "project_id": str(result.project_id),

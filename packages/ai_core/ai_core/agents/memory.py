@@ -19,11 +19,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 import psycopg
-from openai import OpenAI
+from ai_core.client import get_client, CHAT_MODEL
 
 from ai_core.context import ContextResult, build_context
 
-CHAT_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 _SYSTEM_PROMPT = (
     "You are the Memory agent for a personal second-brain app. Answer the "
@@ -55,7 +54,7 @@ def _format_context(context: ContextResult) -> str:
 
 def query_memory_stream(
     conn: psycopg.Connection,
-    client: OpenAI,
+    client,
     user_id: uuid.UUID,
     query: str,
     history: list[dict[str, str]] | None = None,
@@ -79,8 +78,7 @@ def query_memory_stream(
 
     def tokens() -> Iterator[str]:
         for chunk in stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                yield delta
+            if chunk.content:
+                yield chunk.content
 
     return tokens(), citations

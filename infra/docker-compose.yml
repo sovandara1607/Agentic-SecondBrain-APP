@@ -67,7 +67,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL_INTERNAL}
       # Phase 1 capture pipeline (packages/ai_core/ai_core/pipeline.py).
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     depends_on:
       # See the matching comment on the api service above.
       supavisor:

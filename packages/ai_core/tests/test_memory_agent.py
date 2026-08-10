@@ -10,11 +10,11 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 TEST_USER_ID = "88888888-8888-8888-8888-888888888888"
 
 
-class FakeOpenAI:
-    """Stands in for openai.OpenAI - query_memory_stream only calls
+class FakeGeminiClient:
+    """Stands in for ai_core.client.GeminiClient - query_memory_stream only calls
     client.embeddings.create(...) (via ai_core.context.build_context) and
     client.chat.completions.create(..., stream=True) (reading a stream of
-    chunks each shaped like chunk.choices[0].delta.content)."""
+    chunks each with .content attribute)."""
 
     def __init__(self, embedding: list[float], reply_tokens: list[str]):
         self._embedding = embedding
@@ -27,12 +27,9 @@ class FakeOpenAI:
         if "messages" in kwargs:
             def chunks():
                 for token in self._reply_tokens:
-                    delta = type("Delta", (), {"content": token})
-                    choice = type("Choice", (), {"delta": delta})
-                    yield type("Chunk", (), {"choices": [choice]})
+                    yield type("ChatCompletion", (), {"content": token})
             return chunks()
-        item = type("Item", (), {"embedding": self._embedding})
-        return type("Response", (), {"data": [item]})
+        return type("EmbeddingResponse", (), {"embedding": self._embedding})
 
 
 @pytest.fixture
@@ -75,7 +72,7 @@ def _insert_note_with_embedding(conn, title: str, content: str, vector: list[flo
 
 def test_query_memory_stream_yields_tokens_and_citations(conn):
     note_id = _insert_note_with_embedding(conn, "Launch plan", "Ship by Friday", [0.4] * 768)
-    client = FakeOpenAI([0.4] * 768, ["The ", "launch ", "is ", "Friday."])
+    client = FakeGeminiClient([0.4] * 768, ["The ", "launch ", "is ", "Friday."])
 
     tokens, citations = query_memory_stream(conn, client, TEST_USER_ID, "when do we launch?")
 
@@ -86,7 +83,7 @@ def test_query_memory_stream_yields_tokens_and_citations(conn):
 
 
 def test_query_memory_stream_handles_no_context(conn):
-    client = FakeOpenAI([0.1] * 768, ["I ", "don't ", "know."])
+    client = FakeGeminiClient([0.1] * 768, ["I ", "don't ", "know."])
 
     tokens, citations = query_memory_stream(conn, client, TEST_USER_ID, "anything at all?")
 
@@ -95,7 +92,7 @@ def test_query_memory_stream_handles_no_context(conn):
 
 
 def test_query_memory_stream_passes_history_through(conn):
-    client = FakeOpenAI([0.2] * 768, ["Sure."])
+    client = FakeGeminiClient([0.2] * 768, ["Sure."])
     history = [
         {"role": "user", "content": "What is my name?"},
         {"role": "assistant", "content": "You haven't told me."},

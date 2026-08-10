@@ -12,10 +12,10 @@ TEST_USER_ID = "66666666-6666-6666-6666-666666666666"
 OTHER_USER_ID = "55555555-5555-5555-5555-555555555555"
 
 
-class FakeOpenAI:
-    """Stands in for openai.OpenAI - decompose_project only calls
+class FakeGeminiClient:
+    """Stands in for ai_core.client.GeminiClient - decompose_project only calls
     client.chat.completions.create(...) with response_format=json_schema,
-    reading response.choices[0].message.content as a JSON string."""
+    reading response.content as a JSON string."""
 
     def __init__(self, plan: dict):
         self._plan = plan
@@ -23,9 +23,7 @@ class FakeOpenAI:
         self.completions = self
 
     def create(self, **_kwargs):
-        message = type("Message", (), {"content": json.dumps(self._plan)})
-        choice = type("Choice", (), {"message": message})
-        return type("Response", (), {"choices": [choice]})
+        return type("ChatCompletion", (), {"content": json.dumps(self._plan)})
 
 
 @pytest.fixture
@@ -90,7 +88,7 @@ MYLMS_PLAN = {
 def test_decompose_project_creates_tasks_for_every_group(conn):
     project_id = _insert_project(conn, TEST_USER_ID)
 
-    result = decompose_project(conn, FakeOpenAI(MYLMS_PLAN), TEST_USER_ID, project_id, "Launch MyLMS")
+    result = decompose_project(conn, FakeGeminiClient(MYLMS_PLAN), TEST_USER_ID, project_id, "Launch MyLMS")
 
     assert result.total_tasks == 5
     assert [g.name for g in result.groups] == ["Planning", "Development", "Testing"]
@@ -103,7 +101,7 @@ def test_decompose_project_creates_tasks_for_every_group(conn):
 def test_decompose_project_links_each_task_to_the_project(conn):
     project_id = _insert_project(conn, TEST_USER_ID)
 
-    result = decompose_project(conn, FakeOpenAI(MYLMS_PLAN), TEST_USER_ID, project_id, "Launch MyLMS")
+    result = decompose_project(conn, FakeGeminiClient(MYLMS_PLAN), TEST_USER_ID, project_id, "Launch MyLMS")
 
     all_task_ids = {t for g in result.groups for t in g.task_ids}
     with conn.cursor() as cur:
@@ -118,7 +116,7 @@ def test_decompose_project_links_each_task_to_the_project(conn):
 def test_decompose_project_expands_group_dependencies_to_every_leaf_pair(conn):
     project_id = _insert_project(conn, TEST_USER_ID)
 
-    result = decompose_project(conn, FakeOpenAI(MYLMS_PLAN), TEST_USER_ID, project_id, "Launch MyLMS")
+    result = decompose_project(conn, FakeGeminiClient(MYLMS_PLAN), TEST_USER_ID, project_id, "Launch MyLMS")
 
     planning_ids = result.groups[0].task_ids
     development_ids = result.groups[1].task_ids
@@ -143,7 +141,7 @@ def test_decompose_project_expands_group_dependencies_to_every_leaf_pair(conn):
 def test_decompose_project_logs_agent_action(conn):
     project_id = _insert_project(conn, TEST_USER_ID)
 
-    decompose_project(conn, FakeOpenAI(MYLMS_PLAN), TEST_USER_ID, project_id, "Launch MyLMS")
+    decompose_project(conn, FakeGeminiClient(MYLMS_PLAN), TEST_USER_ID, project_id, "Launch MyLMS")
 
     with conn.cursor() as cur:
         cur.execute(
@@ -157,7 +155,7 @@ def test_decompose_project_logs_agent_action(conn):
 
 def test_decompose_project_raises_for_missing_project(conn):
     with pytest.raises(ProjectNotFoundError):
-        decompose_project(conn, FakeOpenAI(MYLMS_PLAN), TEST_USER_ID, uuid.uuid4(), "Launch MyLMS")
+        decompose_project(conn, FakeGeminiClient(MYLMS_PLAN), TEST_USER_ID, uuid.uuid4(), "Launch MyLMS")
 
 
 def test_decompose_project_raises_for_project_owned_by_another_user(conn):
@@ -175,7 +173,7 @@ def test_decompose_project_raises_for_project_owned_by_another_user(conn):
 
     try:
         with pytest.raises(ProjectNotFoundError):
-            decompose_project(conn, FakeOpenAI(MYLMS_PLAN), TEST_USER_ID, other_project_id, "Launch MyLMS")
+            decompose_project(conn, FakeGeminiClient(MYLMS_PLAN), TEST_USER_ID, other_project_id, "Launch MyLMS")
     finally:
         with conn.cursor() as cur:
             cur.execute("delete from auth.users where id = %s", (OTHER_USER_ID,))
@@ -185,7 +183,7 @@ def test_decompose_project_raises_for_project_owned_by_another_user(conn):
 def test_decompose_project_handles_empty_plan(conn):
     project_id = _insert_project(conn, TEST_USER_ID)
 
-    result = decompose_project(conn, FakeOpenAI({"groups": []}), TEST_USER_ID, project_id, "Launch MyLMS")
+    result = decompose_project(conn, FakeGeminiClient({"groups": []}), TEST_USER_ID, project_id, "Launch MyLMS")
 
     assert result.total_tasks == 0
     with conn.cursor() as cur:

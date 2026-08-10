@@ -41,9 +41,49 @@ import uuid
 from dataclasses import dataclass, field
 
 import psycopg
-from openai import OpenAI
+from ai_core.client import get_client, CHAT_MODEL
 
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+
+class CycleDetectedError(ValueError):
+    """Raised when a cyclic dependency is detected in group dependencies."""
+    pass
+
+
+def _detect_cycle(group_names: set[str], depends_on: dict[str, list[str]]) -> list[str] | None:
+    """Detect cycles in group dependency graph using DFS.
+    Returns the cycle path if found, None otherwise."""
+    visited: set[str] = set()
+    rec_stack: set[str] = set()
+    path: list[str] = []
+
+    def dfs(node: str) -> list[str] | None:
+        visited.add(node)
+        rec_stack.add(node)
+        path.append(node)
+
+        for neighbor in depends_on.get(node, []):
+            if neighbor not in group_names:
+                continue
+            if neighbor not in visited:
+                cycle = dfs(neighbor)
+                if cycle:
+                    return cycle
+            elif neighbor in rec_stack:
+                # Found cycle - return path from neighbor to current node
+                idx = path.index(neighbor)
+                return path[idx:] + [neighbor]
+
+        rec_stack.remove(node)
+        path.pop()
+        return None
+
+    for node in group_names:
+        if node not in visited:
+            cycle = dfs(node)
+            if cycle:
+                return cycle
+    return None
+
 
 _SYSTEM_PROMPT = (
     "You are the Planner agent for a personal second-brain app. Break the "
@@ -140,7 +180,7 @@ def _fetch_project(cur, user_id: uuid.UUID, project_id: uuid.UUID) -> tuple[str,
 
 def decompose_project(
     conn: psycopg.Connection,
-    client: OpenAI,
+    client,
     user_id: uuid.UUID,
     project_id: uuid.UUID,
     goal: str,
@@ -155,16 +195,26 @@ def decompose_project(
         project_context += f"\nGoals: {goals}"
 
     response = client.chat.completions.create(
-        model=OPENAI_MODEL,
+        model=CHAT_MODEL,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": f"{project_context}\n\nGoal to decompose: {goal}"},
         ],
         response_format={"type": "json_schema", "json_schema": _RESPONSE_SCHEMA},
     )
-    plan = json.loads(response.choices[0].message.content)
+    plan = json.loads(response.content)
     raw_groups = plan.get("groups", [])
     group_names = {g["name"] for g in raw_groups}
+
+    # Build dependency map and check for cycles
+    depends_on: dict[str, list[str]] = {}
+    for group in raw_groups:
+        depends_on[group["name"]] = [
+            n for n in group.get("depends_on_groups", []) if n in group_names and n != group["name"]
+        ]
+    cycle = _detect_cycle(group_names, depends_on)
+    if cycle:
+        raise CycleDetectedError(f"Cyclic group dependency detected: {' -> '.join(cycle)}")
 
     results: list[GroupResult] = []
     with conn.cursor() as cur:
@@ -202,10 +252,7 @@ def decompose_project(
 
         by_name = {g.name: g for g in results}
         for group, group_result in zip(raw_groups, results):
-            prereq_names = {
-                n for n in group.get("depends_on_groups", []) if n in group_names and n != group["name"]
-            }
-            for prereq_name in prereq_names:
+            for prereq_name in depends_on.get(group["name"], []):
                 prereq = by_name.get(prereq_name)
                 if prereq is None:
                     continue

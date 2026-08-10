@@ -339,7 +339,7 @@ export function CalendarClient({
                       (offsetMinutes(day, block.starts_at) / 60) * HOUR_HEIGHT,
                     );
                     const height = Math.max(
-                      24,
+                      26,
                       ((new Date(block.ends_at).getTime() -
                         new Date(block.starts_at).getTime()) /
                         60_000 /
@@ -347,17 +347,25 @@ export function CalendarClient({
                         HOUR_HEIGHT,
                     );
 
+                    const priority = block.tasks.priority;
+                    const bgClass =
+                      priority === 1
+                        ? "bg-rose-600 text-white shadow-xs hover:bg-rose-700"
+                        : priority === 3
+                        ? "bg-slate-700 text-white shadow-xs hover:bg-slate-800"
+                        : "bg-primary text-primary-foreground shadow-xs hover:opacity-90";
+
                     return (
                       <div
                         key={block.id}
                         draggable
                         onDragStart={(e) => handleDragStart(e, block.tasks!.id)}
-                        className="group absolute right-1 left-1 z-10 flex items-center justify-between overflow-hidden rounded-md border border-primary/30 bg-primary/15 px-2 py-1 text-xs text-primary shadow-xs cursor-grab active:cursor-grabbing hover:bg-primary/25 transition-colors"
+                        className={`group absolute right-1 left-1 z-10 flex items-center justify-between overflow-hidden rounded-lg px-2.5 py-1 text-xs font-semibold cursor-grab active:cursor-grabbing transition-all ${bgClass}`}
                         style={{ top, height }}
                       >
                         <Link
                           href={`/tasks/${block.tasks.id}`}
-                          className="font-medium truncate flex-1 hover:underline"
+                          className="truncate flex-1 hover:underline text-inherit"
                         >
                           {block.tasks.title}
                         </Link>
@@ -368,10 +376,10 @@ export function CalendarClient({
                             e.stopPropagation();
                             await unscheduleTaskBlock(block.id);
                           }}
-                          className="opacity-0 group-hover:opacity-100 text-primary/70 hover:text-destructive p-0.5 transition-all"
+                          className="opacity-0 group-hover:opacity-100 text-inherit/80 hover:text-white hover:bg-black/25 rounded p-0.5 transition-all ml-1"
                           title="Unschedule"
                         >
-                          <X className="size-3" />
+                          <X className="size-3.5" />
                         </button>
                       </div>
                     );

@@ -19,10 +19,7 @@ import uuid
 from dataclasses import dataclass, field
 
 import psycopg
-from openai import OpenAI
-
-OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
-EMBEDDING_DIMENSIONS = 768  # must match embeddings.embedding's column type
+from ai_core.client import get_client, EMBEDDING_DIMENSIONS
 VECTOR_TOP_K = 10
 MAX_CONTEXT_ITEMS = 20
 RECENT_AGENT_ACTIONS = 5
@@ -53,11 +50,11 @@ class ContextResult:
     recent_actions: list[str] = field(default_factory=list)
 
 
-def embed_query(client: OpenAI, query: str) -> list[float]:
+def embed_query(client, query: str) -> list[float]:
     response = client.embeddings.create(
-        model=OPENAI_EMBEDDING_MODEL, input=query, dimensions=EMBEDDING_DIMENSIONS
+        model="text-embedding-004", input=query, dimensions=EMBEDDING_DIMENSIONS
     )
-    return response.data[0].embedding
+    return response.embedding
 
 
 def _title_for(cur: psycopg.Cursor, content_type: str, content_id: uuid.UUID) -> str:
@@ -140,7 +137,7 @@ def _traverse_relationships(
 
 def build_context(
     conn: psycopg.Connection,
-    client: OpenAI,
+    client,
     user_id: uuid.UUID,
     query: str,
     k: int = VECTOR_TOP_K,

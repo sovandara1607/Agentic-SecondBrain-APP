@@ -10,14 +10,13 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 TEST_USER_ID = "99999999-9999-9999-9999-999999999999"
 
 
-class FakeOpenAI:
+class FakeGeminiClient:
     def __init__(self, embedding: list[float]):
         self._embedding = embedding
         self.embeddings = self
 
     def create(self, **_kwargs):
-        item = type("Item", (), {"embedding": self._embedding})
-        return type("Response", (), {"data": [item]})
+        return type("EmbeddingResponse", (), {"embedding": self._embedding})
 
 
 @pytest.fixture
@@ -69,7 +68,7 @@ def test_build_context_finds_closest_match_via_vector_search(conn):
     _insert_embedding(conn, close_id, [0.9] * 768)
     _insert_embedding(conn, far_id, [-0.9] * 768)
 
-    result = build_context(conn, FakeOpenAI([0.9] * 768), TEST_USER_ID, "anything", k=1)
+    result = build_context(conn, FakeGeminiClient([0.9] * 768), TEST_USER_ID, "anything", k=1)
 
     assert len(result.items) == 1
     assert result.items[0].content_id == close_id
@@ -100,7 +99,7 @@ def test_build_context_traverses_relationships_two_hops(conn):
         )
     conn.commit()
 
-    result = build_context(conn, FakeOpenAI([0.5] * 768), TEST_USER_ID, "anything", k=1)
+    result = build_context(conn, FakeGeminiClient([0.5] * 768), TEST_USER_ID, "anything", k=1)
 
     found_ids = {item.content_id for item in result.items}
     assert seed_id in found_ids
@@ -121,6 +120,6 @@ def test_build_context_includes_recent_agent_actions(conn):
         )
     conn.commit()
 
-    result = build_context(conn, FakeOpenAI([0.3] * 768), TEST_USER_ID, "anything")
+    result = build_context(conn, FakeGeminiClient([0.3] * 768), TEST_USER_ID, "anything")
 
     assert any("Organized a capture" in a for a in result.recent_actions)

@@ -15,8 +15,8 @@ TEST_USER_ID = "22222222-2222-2222-2222-222222222222"
 OTHER_USER_ID = "33333333-3333-3333-3333-333333333333"
 
 
-class FakeOpenAI:
-    """Stands in for openai.OpenAI in the /agents/memory/stream endpoint -
+class FakeGeminiClient:
+    """Stands in for ai_core.client.GeminiClient in the /agents/memory/stream endpoint -
     only chat.completions.create(..., stream=True) and embeddings.create(...)
     are called."""
 
@@ -30,18 +30,15 @@ class FakeOpenAI:
         if "messages" in kwargs:
             def chunks():
                 for token in self._reply_tokens:
-                    delta = type("Delta", (), {"content": token})
-                    choice = type("Choice", (), {"delta": delta})
-                    yield type("Chunk", (), {"choices": [choice]})
+                    yield type("ChatCompletion", (), {"content": token})
             return chunks()
-        item = type("Item", (), {"embedding": [0.1] * 768})
-        return type("Response", (), {"data": [item]})
+        return type("EmbeddingResponse", (), {"embedding": [0.1] * 768})
 
 
-class FakePlannerOpenAI:
-    """Stands in for openai.OpenAI in /agents/planner/decompose - only
+class FakePlannerGeminiClient:
+    """Stands in for ai_core.client.GeminiClient in /agents/planner/decompose - only
     chat.completions.create(..., response_format=json_schema) is called,
-    reading response.choices[0].message.content as a JSON string."""
+    reading response.content as a JSON string."""
 
     def __init__(self, plan: dict):
         self._plan = plan
@@ -49,9 +46,7 @@ class FakePlannerOpenAI:
         self.completions = self
 
     def create(self, **_kwargs):
-        message = type("Message", (), {"content": json.dumps(self._plan)})
-        choice = type("Choice", (), {"message": message})
-        return type("Response", (), {"choices": [choice]})
+        return type("ChatCompletion", (), {"content": json.dumps(self._plan)})
 
 
 ONE_GROUP_PLAN = {
@@ -67,9 +62,9 @@ ONE_GROUP_PLAN = {
 }
 
 
-class BlowingUpOpenAI:
+class BlowingUpGeminiClient:
     """Simulates a client whose failure message would leak internals -
-    real psycopg/openai exceptions can embed connection strings, secrets,
+    real psycopg/gemini exceptions can embed connection strings, secrets,
     or other backend details in str(exc)."""
 
     def __init__(self):
@@ -114,7 +109,7 @@ def conn():
 
 @pytest.fixture
 def client(conn, monkeypatch):
-    monkeypatch.setattr(agents_module, "OpenAI", lambda: FakeOpenAI(["Hi ", "there."]))
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeGeminiClient(["Hi ", "there."]))
     app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
     yield TestClient(app)
     app.dependency_overrides.pop(verify_jwt, None)
@@ -179,7 +174,7 @@ def test_memory_stream_requires_auth():
 
 
 def test_memory_stream_error_message_never_leaks_exception_internals(conn, monkeypatch):
-    monkeypatch.setattr(agents_module, "OpenAI", lambda: BlowingUpOpenAI())
+    monkeypatch.setattr(agents_module, "get_client", lambda: BlowingUpGeminiClient())
     app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
     try:
         response = TestClient(app).post("/agents/memory/stream", json={"query": "hi"})
@@ -225,7 +220,7 @@ def _insert_project(conn, user_id: str, name: str = "MyLMS") -> str:
 
 
 def test_planner_decompose_creates_tasks(conn, monkeypatch):
-    monkeypatch.setattr(agents_module, "OpenAI", lambda: FakePlannerOpenAI(ONE_GROUP_PLAN))
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakePlannerGeminiClient(ONE_GROUP_PLAN))
     app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
     project_id = _insert_project(conn, TEST_USER_ID)
 
@@ -247,7 +242,7 @@ def test_planner_decompose_creates_tasks(conn, monkeypatch):
 
 
 def test_planner_decompose_rejects_project_owned_by_another_user(conn, monkeypatch):
-    monkeypatch.setattr(agents_module, "OpenAI", lambda: FakePlannerOpenAI(ONE_GROUP_PLAN))
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakePlannerGeminiClient(ONE_GROUP_PLAN))
     app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
     other_project_id = _insert_project(conn, OTHER_USER_ID, "Not yours")
 
@@ -265,7 +260,7 @@ def test_planner_decompose_rejects_project_owned_by_another_user(conn, monkeypat
 
 
 def test_planner_decompose_rejects_invalid_project_id(conn, monkeypatch):
-    monkeypatch.setattr(agents_module, "OpenAI", lambda: FakePlannerOpenAI(ONE_GROUP_PLAN))
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakePlannerGeminiClient(ONE_GROUP_PLAN))
     app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
 
     try:
