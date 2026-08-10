@@ -5,26 +5,49 @@ import uuid
 import psycopg
 import pytest
 
-from ai_core.pipeline import process_capture
+from ai_core.pipeline import EMBEDDING_DIMENSIONS, process_capture
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 TEST_USER_ID = "33333333-3333-3333-3333-333333333333"
 
+BASE_PAYLOAD = {
+    "tags": [],
+    "entities": [],
+    "project_name_match": None,
+    "is_decision": False,
+    "is_actionable": False,
+    "task_title": None,
+    "task_priority": None,
+    "task_deadline": None,
+    "needs_review": False,
+}
+
+
+def _vector(seed: float) -> list[float]:
+    return [seed] * EMBEDDING_DIMENSIONS
+
 
 class FakeOpenAI:
-    """Stands in for openai.OpenAI - process_capture only ever calls
-    client.chat.completions.create(...) and reads
-    response.choices[0].message.content, so that's all this fakes."""
+    """Stands in for openai.OpenAI - process_capture only calls
+    client.chat.completions.create(...) (reading
+    response.choices[0].message.content) and
+    client.embeddings.create(...) (reading response.data[0].embedding),
+    so that's all this fakes."""
 
-    def __init__(self, payload: dict):
+    def __init__(self, payload: dict, embedding: list[float] | None = None):
         self._payload = payload
+        self._embedding = embedding or _vector(0.1)
         self.chat = self
         self.completions = self
+        self.embeddings = self
 
-    def create(self, **_kwargs):
-        message = type("Message", (), {"content": json.dumps(self._payload)})
-        choice = type("Choice", (), {"message": message})
-        return type("Response", (), {"choices": [choice]})
+    def create(self, **kwargs):
+        if "messages" in kwargs:
+            message = type("Message", (), {"content": json.dumps(self._payload)})
+            choice = type("Choice", (), {"message": message})
+            return type("Response", (), {"choices": [choice]})
+        item = type("Item", (), {"embedding": self._embedding})
+        return type("Response", (), {"data": [item]})
 
 
 @pytest.fixture
@@ -65,13 +88,14 @@ def test_process_capture_creates_note_tags_and_task(conn):
     capture_id = _insert_capture(conn, "Call the dentist by Friday to reschedule.")
     fake = FakeOpenAI(
         {
+            **BASE_PAYLOAD,
             "title": "Reschedule dentist appointment",
             "summary": "Need to call the dentist to reschedule before Friday.",
             "tags": ["health", "calls"],
             "is_actionable": True,
             "task_title": "Call the dentist to reschedule",
             "task_priority": 2,
-            "needs_review": False,
+            "task_deadline": "2026-08-14",
         }
     )
 
@@ -79,13 +103,14 @@ def test_process_capture_creates_note_tags_and_task(conn):
 
     with conn.cursor() as cur:
         cur.execute(
-            "select title, ai_summary, capture_id from notes where id = %s",
+            "select title, ai_summary, capture_id, note_type from notes where id = %s",
             (result.note_id,),
         )
-        title, ai_summary, note_capture_id = cur.fetchone()
+        title, ai_summary, note_capture_id, note_type = cur.fetchone()
         assert title == "Reschedule dentist appointment"
         assert ai_summary.startswith("Need to call the dentist")
         assert note_capture_id == capture_id
+        assert note_type == "note"
 
         cur.execute(
             """
@@ -100,13 +125,14 @@ def test_process_capture_creates_note_tags_and_task(conn):
 
         assert result.task_id is not None
         cur.execute(
-            "select title, priority, capture_id from tasks where id = %s",
+            "select title, priority, capture_id, deadline from tasks where id = %s",
             (result.task_id,),
         )
-        task_title, priority, task_capture_id = cur.fetchone()
+        task_title, priority, task_capture_id, deadline = cur.fetchone()
         assert task_title == "Call the dentist to reschedule"
         assert priority == 2
         assert task_capture_id == capture_id
+        assert deadline.date().isoformat() == "2026-08-14"
 
         cur.execute("select status, processed_at from captures where id = %s", (capture_id,))
         status, processed_at = cur.fetchone()
@@ -122,18 +148,22 @@ def test_process_capture_creates_note_tags_and_task(conn):
         assert action_kind == "created"
         assert target_id == result.note_id
 
+        # create_embeddings: one row for this note.
+        cur.execute(
+            "select chunk_index from embeddings where content_type = 'note' and content_id = %s",
+            (result.note_id,),
+        )
+        assert cur.fetchone()[0] == 0
+
 
 def test_process_capture_non_actionable_creates_no_task(conn):
     capture_id = _insert_capture(conn, "Interesting article about tide pools.")
     fake = FakeOpenAI(
         {
+            **BASE_PAYLOAD,
             "title": "Tide pools article",
             "summary": "An article about tide pool ecosystems.",
             "tags": ["reading"],
-            "is_actionable": False,
-            "task_title": None,
-            "task_priority": None,
-            "needs_review": False,
         }
     )
 
@@ -149,12 +179,9 @@ def test_process_capture_needs_review_sets_capture_status(conn):
     capture_id = _insert_capture(conn, "asdkjf partial thought, unclear")
     fake = FakeOpenAI(
         {
+            **BASE_PAYLOAD,
             "title": "Unclear note",
             "summary": "Fragmentary text, unclear intent.",
-            "tags": [],
-            "is_actionable": False,
-            "task_title": None,
-            "task_priority": None,
             "needs_review": True,
         }
     )
@@ -167,6 +194,127 @@ def test_process_capture_needs_review_sets_capture_status(conn):
 
 
 def test_process_capture_raises_for_missing_capture(conn):
-    fake = FakeOpenAI({})
+    fake = FakeOpenAI(BASE_PAYLOAD)
     with pytest.raises(ValueError, match="not found"):
         process_capture(conn, uuid.uuid4(), client=fake)
+
+
+def test_process_capture_creates_entities_and_links_them(conn):
+    capture_id = _insert_capture(conn, "Had lunch with Sarah to discuss the Q3 roadmap.")
+    fake = FakeOpenAI(
+        {
+            **BASE_PAYLOAD,
+            "title": "Lunch with Sarah",
+            "summary": "Discussed the Q3 roadmap over lunch with Sarah.",
+            "entities": [
+                {"name": "Sarah", "kind": "person"},
+                {"name": "Q3 roadmap", "kind": "concept"},
+            ],
+        }
+    )
+
+    result = process_capture(conn, capture_id, client=fake)
+
+    assert sorted(result.entities) == ["Q3 roadmap", "Sarah"]
+    with conn.cursor() as cur:
+        cur.execute(
+            "select kind, name from entities where user_id = %s order by name",
+            (TEST_USER_ID,),
+        )
+        assert cur.fetchall() == [("concept", "Q3 roadmap"), ("person", "Sarah")]
+
+        cur.execute(
+            """
+            select count(*) from relationships
+            where source_type = 'note' and source_id = %s
+              and target_type = 'entity' and relation_kind = 'mentions'
+            """,
+            (result.note_id,),
+        )
+        assert cur.fetchone()[0] == 2
+
+
+def test_process_capture_matches_existing_project(conn):
+    with conn.cursor() as cur:
+        cur.execute(
+            "insert into projects (user_id, name) values (%s, 'Website Relaunch') returning id",
+            (TEST_USER_ID,),
+        )
+        project_id = cur.fetchone()[0]
+    conn.commit()
+
+    capture_id = _insert_capture(conn, "Finalize the homepage copy for the relaunch.")
+    fake = FakeOpenAI(
+        {
+            **BASE_PAYLOAD,
+            "title": "Homepage copy",
+            "summary": "Finalize homepage copy for the site relaunch.",
+            "project_name_match": "Website Relaunch",
+            "is_actionable": True,
+            "task_title": "Finalize homepage copy",
+            "task_priority": 2,
+        }
+    )
+
+    result = process_capture(conn, capture_id, client=fake)
+
+    with conn.cursor() as cur:
+        cur.execute("select project_id from notes where id = %s", (result.note_id,))
+        assert cur.fetchone()[0] == project_id
+        cur.execute("select project_id from tasks where id = %s", (result.task_id,))
+        assert cur.fetchone()[0] == project_id
+
+
+def test_process_capture_decision_sets_note_type(conn):
+    capture_id = _insert_capture(conn, "We decided to go with the vendor proposal.")
+    fake = FakeOpenAI(
+        {
+            **BASE_PAYLOAD,
+            "title": "Vendor decision",
+            "summary": "Decided to go with the vendor proposal.",
+            "is_decision": True,
+        }
+    )
+
+    result = process_capture(conn, capture_id, client=fake)
+
+    with conn.cursor() as cur:
+        cur.execute("select note_type from notes where id = %s", (result.note_id,))
+        assert cur.fetchone()[0] == "decision"
+
+
+def test_process_capture_links_related_notes_above_threshold(conn):
+    # First capture, gets an embedding vector that's identical to the
+    # second's (cosine similarity 1.0, comfortably above the threshold).
+    capture_1 = _insert_capture(conn, "Notes on the design system color palette.")
+    process_capture(
+        conn,
+        capture_1,
+        client=FakeOpenAI(
+            {**BASE_PAYLOAD, "title": "Design system colors", "summary": "Color palette notes."},
+            embedding=_vector(0.5),
+        ),
+    )
+
+    capture_2 = _insert_capture(conn, "More notes on the design system color palette.")
+    result = process_capture(
+        conn,
+        capture_2,
+        client=FakeOpenAI(
+            {**BASE_PAYLOAD, "title": "More on colors", "summary": "More color palette notes."},
+            embedding=_vector(0.5),
+        ),
+    )
+
+    assert len(result.related_note_ids) == 1
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            select relation_kind, weight from relationships
+            where source_type = 'note' and source_id = %s and target_type = 'note'
+            """,
+            (result.note_id,),
+        )
+        relation_kind, weight = cur.fetchone()
+        assert relation_kind == "relates_to"
+        assert weight > 0.99
