@@ -12,6 +12,7 @@ import {
   FolderKanban,
   Calendar,
   Sparkles,
+  MessageSquare,
   Settings,
   LogOut,
   PanelLeftClose,
@@ -52,6 +53,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "projects", title: "Projects", href: "/projects", icon: FolderKanban },
       { id: "calendar", title: "Calendar", href: "/calendar", icon: Calendar },
       { id: "reviews", title: "Reviews", href: "/reviews", icon: Sparkles },
+      { id: "workspace", title: "AI Workspace", href: "/workspace", icon: MessageSquare },
     ],
   },
 ];
