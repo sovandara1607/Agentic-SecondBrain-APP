@@ -11,6 +11,7 @@ from main import app
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 TEST_USER_ID = "22222222-2222-2222-2222-222222222222"
+OTHER_USER_ID = "33333333-3333-3333-3333-333333333333"
 
 
 class FakeOpenAI:
@@ -48,10 +49,20 @@ def conn():
                 """,
                 (TEST_USER_ID,),
             )
+            cur.execute(
+                """
+                insert into auth.users (id, email, encrypted_password)
+                values (%s, 'phase3-agents-endpoint-other-test@example.com', 'x')
+                on conflict (id) do nothing
+                """,
+                (OTHER_USER_ID,),
+            )
         connection.commit()
         yield connection
         with connection.cursor() as cur:
-            cur.execute("delete from auth.users where id = %s", (TEST_USER_ID,))
+            cur.execute(
+                "delete from auth.users where id in (%s, %s)", (TEST_USER_ID, OTHER_USER_ID)
+            )
         connection.commit()
 
 
@@ -119,3 +130,26 @@ def test_memory_stream_requires_auth():
     app.dependency_overrides.pop(verify_jwt, None)
     response = TestClient(app).post("/agents/memory/stream", json={"query": "hi"})
     assert response.status_code in (401, 403)
+
+
+def test_memory_stream_rejects_conversation_owned_by_another_user(client, conn):
+    with conn.cursor() as cur:
+        cur.execute(
+            "insert into conversations (user_id, title) values (%s, 'not yours') returning id",
+            (OTHER_USER_ID,),
+        )
+        other_conversation_id = str(cur.fetchone()[0])
+    conn.commit()
+
+    response = client.post(
+        "/agents/memory/stream",
+        json={"query": "let me in", "conversation_id": other_conversation_id},
+    )
+
+    assert response.status_code == 404
+    with conn.cursor() as cur:
+        cur.execute(
+            "select count(*) from messages where conversation_id = %s", (other_conversation_id,)
+        )
+        count = cur.fetchone()[0]
+    assert count == 0

@@ -2,7 +2,7 @@ import json
 import uuid
 
 import psycopg
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
 from pydantic import BaseModel
@@ -27,6 +27,20 @@ def _sse(event: dict) -> str:
 def memory_stream(
     body: MemoryStreamRequest, user_id: str = Depends(verify_jwt)
 ) -> StreamingResponse:
+    # Ownership check happens outside the generator, before any bytes are
+    # sent - StreamingResponse commits to its status code as soon as
+    # streaming starts, so raising HTTPException from inside the generator
+    # can't turn into a clean 404 once that's underway.
+    if body.conversation_id:
+        with psycopg.connect(get_settings().database_url) as check_conn:
+            with check_conn.cursor() as cur:
+                cur.execute(
+                    "select 1 from conversations where id = %s and user_id = %s",
+                    (body.conversation_id, user_id),
+                )
+                if cur.fetchone() is None:
+                    raise HTTPException(status_code=404, detail="conversation not found")
+
     def generate():
         conn = psycopg.connect(get_settings().database_url)
         try:
@@ -42,9 +56,19 @@ def memory_stream(
                     conn.commit()
                 yield _sse({"type": "conversation", "id": conversation_id})
 
+                # user_id filters below are defense-in-depth on top of the
+                # ownership check above - conversation_id was already
+                # verified to belong to this user (or was just created for
+                # them), but keeping the filter here means a future caller
+                # of this query can't reintroduce the IDOR by trusting
+                # conversation_id alone.
                 cur.execute(
-                    "select role, content from messages where conversation_id = %s order by created_at",
-                    (conversation_id,),
+                    """
+                    select role, content from messages
+                    where conversation_id = %s and user_id = %s
+                    order by created_at
+                    """,
+                    (conversation_id, user_id),
                 )
                 history = [{"role": role, "content": content} for role, content in cur.fetchall()]
 
