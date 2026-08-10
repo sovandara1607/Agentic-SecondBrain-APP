@@ -1,44 +1,64 @@
 import Link from "next/link";
-import { AlertTriangle, Calendar as CalendarIcon } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState } from "@/components/empty-state";
+import { Button } from "@/components/ui/button";
 import { PriorityBadge } from "@/components/priority-badge";
 
-type TimeBlockRow = {
+const START_HOUR = 7;
+const END_HOUR = 21;
+const HOUR_HEIGHT = 48; // px
+const GRID_HEIGHT = (END_HOUR - START_HOUR) * HOUR_HEIGHT;
+const DAY_MS = 86_400_000;
+
+type Block = {
   id: string;
   starts_at: string;
   ends_at: string;
   tasks: { id: string; title: string; priority: number } | null;
 };
 
-function dayLabel(dateKey: string) {
-  const date = new Date(`${dateKey}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffDays = Math.round((date.getTime() - today.getTime()) / 86_400_000);
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Tomorrow";
-  return date.toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
+function startOfWeek(date: Date) {
+  const d = new Date(date);
+  const isoDay = d.getDay() === 0 ? 7 : d.getDay(); // Monday = 1 .. Sunday = 7
+  d.setHours(0, 0, 0, 0);
+  d.setTime(d.getTime() - (isoDay - 1) * DAY_MS);
+  return d;
 }
 
-export default async function CalendarPage() {
-  const supabase = await createClient();
-  const now = new Date();
-  const horizonEnd = new Date(now.getTime() + 14 * 86_400_000);
+function offsetMinutes(dayStart: Date, iso: string) {
+  const d = new Date(iso);
+  return (d.getTime() - dayStart.getTime()) / 60_000 - START_HOUR * 60;
+}
 
+export default async function CalendarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ offset?: string }>;
+}) {
+  const { offset: offsetParam } = await searchParams;
+  const offset = Number(offsetParam ?? 0) || 0;
+
+  const now = new Date();
+  const weekStart = startOfWeek(now);
+  weekStart.setTime(weekStart.getTime() + offset * 7 * DAY_MS);
+  const weekEnd = new Date(weekStart.getTime() + 7 * DAY_MS);
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart);
+    d.setTime(d.getTime() + i * DAY_MS);
+    return d;
+  });
+
+  const supabase = await createClient();
   const [{ data: blocks }, { data: atRisk }] = await Promise.all([
     supabase
       .from("time_blocks")
       .select("id, starts_at, ends_at, tasks(id, title, priority)")
       .eq("status", "scheduled")
-      .gte("starts_at", now.toISOString())
-      .lte("starts_at", horizonEnd.toISOString())
+      .gte("starts_at", weekStart.toISOString())
+      .lt("starts_at", weekEnd.toISOString())
       .order("starts_at"),
     supabase
       .from("tasks")
@@ -47,23 +67,44 @@ export default async function CalendarPage() {
       .order("priority"),
   ]);
 
-  const byDay = new Map<string, TimeBlockRow[]>();
-  for (const block of (blocks ?? []) as unknown as TimeBlockRow[]) {
-    const dateKey = block.starts_at.slice(0, 10);
-    if (!byDay.has(dateKey)) byDay.set(dateKey, []);
-    byDay.get(dateKey)!.push(block);
-  }
-  const days = [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const blocksByDay = days.map((day) =>
+    ((blocks ?? []) as unknown as Block[]).filter(
+      (b) => new Date(b.starts_at).toDateString() === day.toDateString(),
+    ),
+  );
+
+  const todayKey = now.toDateString();
+  const nowOffset = offsetMinutes(startOfWeek(now), now.toISOString());
+  const showNowLine = offset === 0 && nowOffset >= 0 && nowOffset <= (END_HOUR - START_HOUR) * 60;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-heading text-2xl font-semibold">Calendar</h1>
-        <p className="text-sm text-muted-foreground">
-          What the scheduler placed for the next two weeks, deterministically
-          - see a task&apos;s detail page to change priority, deadline, or
-          energy level and it&apos;ll be replanned on its next run.
-        </p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-heading text-2xl font-semibold">Calendar</h1>
+          <p className="text-sm text-muted-foreground">
+            What the scheduler placed this week - edit a task&apos;s
+            priority, deadline, or energy level and it&apos;s replanned on
+            its next run.
+          </p>
+        </div>
+        <div className="flex items-center gap-1">
+          <Link href={`/calendar?offset=${offset - 1}`}>
+            <Button type="button" variant="outline" size="icon">
+              <ChevronLeft className="size-4" strokeWidth={1.75} />
+            </Button>
+          </Link>
+          <Link href="/calendar">
+            <Button type="button" variant="outline" size="sm">
+              Today
+            </Button>
+          </Link>
+          <Link href={`/calendar?offset=${offset + 1}`}>
+            <Button type="button" variant="outline" size="icon">
+              <ChevronRight className="size-4" strokeWidth={1.75} />
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {atRisk && atRisk.length > 0 && (
@@ -97,55 +138,92 @@ export default async function CalendarPage() {
         </Card>
       )}
 
-      {days.length ? (
-        <div className="space-y-4">
-          {days.map(([dateKey, dayBlocks]) => (
-            <div key={dateKey} className="space-y-1.5">
-              <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                {dayLabel(dateKey)}
-              </p>
-              <div className="space-y-1.5">
-                {dayBlocks.map((block) => (
-                  <Card key={block.id}>
-                    <CardContent className="flex items-center gap-3">
-                      <span className="w-28 shrink-0 text-xs text-muted-foreground">
-                        {new Date(block.starts_at).toLocaleTimeString([], {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
-                        {" - "}
-                        {new Date(block.ends_at).toLocaleTimeString([], {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                      {block.tasks && (
-                        <>
-                          <Link
-                            href={`/tasks/${block.tasks.id}`}
-                            className="flex-1 truncate text-sm hover:underline"
-                          >
-                            {block.tasks.title}
-                          </Link>
-                          <PriorityBadge priority={block.tasks.priority} />
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
+      <div className="overflow-x-auto rounded-xl border border-border/60 bg-card shadow-[var(--shadow-raised-sm)]">
+        <div className="grid min-w-[720px] grid-cols-[56px_repeat(7,1fr)]">
+          <div />
+          {days.map((day) => {
+            const isToday = day.toDateString() === todayKey;
+            return (
+              <div
+                key={day.toISOString()}
+                className={`border-l border-border/60 px-2 py-2 text-center ${isToday ? "bg-primary/10" : ""}`}
+              >
+                <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                  {day.toLocaleDateString(undefined, { weekday: "short" })}
+                </p>
+                <p
+                  className={`font-heading text-sm ${isToday ? "font-semibold text-primary" : ""}`}
+                >
+                  {day.getDate()}
+                </p>
               </div>
-            </div>
-          ))}
+            );
+          })}
+
+          <div className="relative" style={{ height: GRID_HEIGHT }}>
+            {Array.from({ length: END_HOUR - START_HOUR }, (_, i) => (
+              <div
+                key={i}
+                className="absolute right-1 -translate-y-1/2 text-[10px] text-muted-foreground"
+                style={{ top: i * HOUR_HEIGHT }}
+              >
+                {((START_HOUR + i + 11) % 12) + 1}
+                {START_HOUR + i < 12 ? "am" : "pm"}
+              </div>
+            ))}
+          </div>
+
+          {days.map((day, i) => {
+            const isToday = day.toDateString() === todayKey;
+            return (
+              <div
+                key={day.toISOString()}
+                className="relative border-l border-border/60"
+                style={{ height: GRID_HEIGHT }}
+              >
+                {Array.from({ length: END_HOUR - START_HOUR }, (_, h) => (
+                  <div
+                    key={h}
+                    className="absolute w-full border-t border-border/40"
+                    style={{ top: h * HOUR_HEIGHT }}
+                  />
+                ))}
+                {isToday && showNowLine && (
+                  <div
+                    className="absolute z-10 w-full border-t-2 border-destructive"
+                    style={{ top: (nowOffset / 60) * HOUR_HEIGHT }}
+                  />
+                )}
+                {blocksByDay[i].map((block) => {
+                  if (!block.tasks) return null;
+                  const top = Math.max(
+                    0,
+                    (offsetMinutes(day, block.starts_at) / 60) * HOUR_HEIGHT,
+                  );
+                  const height = Math.max(
+                    18,
+                    ((new Date(block.ends_at).getTime() -
+                      new Date(block.starts_at).getTime()) /
+                      60_000 /
+                      60) *
+                      HOUR_HEIGHT,
+                  );
+                  return (
+                    <Link
+                      key={block.id}
+                      href={`/tasks/${block.tasks.id}`}
+                      className="absolute right-0.5 left-0.5 overflow-hidden truncate rounded-md border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[11px] leading-tight whitespace-nowrap text-primary shadow-[var(--shadow-raised-sm)] transition-colors hover:bg-primary/20"
+                      style={{ top, height }}
+                    >
+                      {block.tasks.title}
+                    </Link>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
-      ) : (
-        !atRisk?.length && (
-          <EmptyState
-            icon={CalendarIcon}
-            title="Nothing scheduled"
-            description="Add a task and the scheduler will place it here automatically, based on your priority, deadline, and working hours in Settings."
-          />
-        )
-      )}
+      </div>
     </div>
   );
 }

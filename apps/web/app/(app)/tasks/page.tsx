@@ -91,8 +91,28 @@ export default async function TasksPage({
             </option>
           ))}
         </Select>
+        <Input
+          name="estimated_minutes"
+          type="number"
+          min={5}
+          step={5}
+          defaultValue={30}
+          title="Duration (minutes)"
+          className="w-24"
+        />
+        <Input
+          name="scheduled_at"
+          type="datetime-local"
+          title="Schedule at a specific time (optional) - leave blank to let the scheduler place it automatically"
+          className="w-52"
+        />
         <Button type="submit">Add</Button>
       </form>
+      <p className="-mt-3 text-xs text-muted-foreground">
+        Duration and schedule time are optional - leave the time blank and
+        the scheduler places it automatically based on priority, deadline,
+        and your working hours.
+      </p>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1">
