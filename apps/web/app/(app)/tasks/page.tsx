@@ -68,22 +68,22 @@ export default async function TasksPage({
         </p>
       </div>
 
-      <form action={createTask} className="flex flex-wrap gap-2">
+      <form action={createTask} className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
         <Input
           name="title"
           placeholder="Add a task..."
           required
-          className="min-w-48 flex-1"
+          className="w-full sm:min-w-48 sm:flex-1"
         />
-        <Select name="priority" defaultValue="3" className="w-36">
+        <Select name="priority" defaultValue="3" className="w-full sm:w-36">
           <option value="1">P1 · Highest</option>
           <option value="2">P2 · High</option>
           <option value="3">P3 · Medium</option>
           <option value="4">P4 · Low</option>
           <option value="5">P5 · Lowest</option>
         </Select>
-        <Input name="deadline" type="date" className="w-40" />
-        <Select name="project_id" defaultValue="" className="w-40">
+        <Input name="deadline" type="date" className="w-full sm:w-40" />
+        <Select name="project_id" defaultValue="" className="w-full sm:w-40">
           <option value="">No project</option>
           {projects?.map((project) => (
             <option key={project.id} value={project.id}>
@@ -98,15 +98,15 @@ export default async function TasksPage({
           step={5}
           defaultValue={30}
           title="Duration (minutes)"
-          className="w-24"
+          className="w-full sm:w-24"
         />
         <Input
           name="scheduled_at"
           type="datetime-local"
           title="Schedule at a specific time (optional) - leave blank to let the scheduler place it automatically"
-          className="w-52"
+          className="w-full sm:w-52"
         />
-        <Button type="submit">Add</Button>
+        <Button type="submit" className="w-full sm:w-auto">Add</Button>
       </form>
       <p className="-mt-3 text-xs text-muted-foreground">
         Duration and schedule time are optional - leave the time blank and
@@ -114,8 +114,8 @@ export default async function TasksPage({
         and your working hours.
       </p>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex gap-1 overflow-x-auto pb-1 sm:pb-0">
           {STATUS_FILTERS.map((f) => (
             <Link
               key={f.value}
@@ -133,7 +133,7 @@ export default async function TasksPage({
         </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           Sort by
-          <div className="flex gap-1">
+          <div className="flex gap-1 overflow-x-auto">
             {SORTS.map((s) => (
               <Link
                 key={s.value}
@@ -163,50 +163,55 @@ export default async function TasksPage({
             const overdue = isOverdue(task.deadline, task.status);
             return (
               <Card key={task.id}>
-                <CardContent className="flex items-center gap-3">
-                  <form action={toggleTaskDone}>
-                    <input type="hidden" name="id" value={task.id} />
-                    <input
-                      type="hidden"
-                      name="was_done"
-                      value={String(done)}
+                <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <form action={toggleTaskDone}>
+                      <input type="hidden" name="id" value={task.id} />
+                      <input
+                        type="hidden"
+                        name="was_done"
+                        value={String(done)}
+                      />
+                      <button
+                        type="submit"
+                        className="text-muted-foreground hover:text-foreground"
+                        aria-label={done ? "Mark open" : "Mark done"}
+                      >
+                        {done ? (
+                          <CheckSquare className="size-4" />
+                        ) : (
+                          <Square className="size-4" />
+                        )}
+                      </button>
+                    </form>
+                    <Link
+                      href={`/tasks/${task.id}`}
+                      className={`flex-1 truncate text-sm hover:underline ${done ? "text-muted-foreground line-through" : ""}`}
+                    >
+                      {task.title}
+                    </Link>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-border/40 justify-between sm:justify-end">
+                    {project && (
+                      <Badge variant="muted">{project.name}</Badge>
+                    )}
+                    {task.deadline && (
+                      <span
+                        className={`text-xs ${overdue ? "font-medium text-destructive" : "text-muted-foreground"}`}
+                      >
+                        {new Date(task.deadline).toLocaleDateString()}
+                      </span>
+                    )}
+                    <PriorityBadge priority={task.priority} />
+                    <Badge variant="muted">{task.status}</Badge>
+                    <DeleteButton
+                      action={deleteTask}
+                      id={task.id}
+                      confirmMessage={`Delete "${task.title}"?`}
+                      label="Delete task"
                     />
-                    <button
-                      type="submit"
-                      className="text-muted-foreground hover:text-foreground"
-                      aria-label={done ? "Mark open" : "Mark done"}
-                    >
-                      {done ? (
-                        <CheckSquare className="size-4" />
-                      ) : (
-                        <Square className="size-4" />
-                      )}
-                    </button>
-                  </form>
-                  <Link
-                    href={`/tasks/${task.id}`}
-                    className={`flex-1 truncate text-sm hover:underline ${done ? "text-muted-foreground line-through" : ""}`}
-                  >
-                    {task.title}
-                  </Link>
-                  {project && (
-                    <Badge variant="muted">{project.name}</Badge>
-                  )}
-                  {task.deadline && (
-                    <span
-                      className={`text-xs ${overdue ? "font-medium text-destructive" : "text-muted-foreground"}`}
-                    >
-                      {new Date(task.deadline).toLocaleDateString()}
-                    </span>
-                  )}
-                  <PriorityBadge priority={task.priority} />
-                  <Badge variant="muted">{task.status}</Badge>
-                  <DeleteButton
-                    action={deleteTask}
-                    id={task.id}
-                    confirmMessage={`Delete "${task.title}"?`}
-                    label="Delete task"
-                  />
+                  </div>
                 </CardContent>
               </Card>
             );

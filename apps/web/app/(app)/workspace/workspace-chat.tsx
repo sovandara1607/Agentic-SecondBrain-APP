@@ -161,7 +161,32 @@ export function WorkspaceChat({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 gap-4">
+    <div className="flex min-h-0 flex-1 flex-col md:flex-row gap-4">
+      {/* Mobile Chat Switcher & New Chat Button */}
+      <div className="flex md:hidden items-center gap-2 pb-1">
+        <Button variant="outline" size="sm" onClick={startNewConversation} className="shrink-0">
+          <Plus className="size-4" />
+          New
+        </Button>
+        {conversations.length > 0 && (
+          <select
+            value={conversationId ?? ""}
+            onChange={(e) => {
+              if (e.target.value) openConversation(e.target.value);
+              else startNewConversation();
+            }}
+            className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="">New Conversation</option>
+            {conversations.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.title || "Untitled conversation"}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
       <aside className="hidden w-56 shrink-0 flex-col gap-2 md:flex">
         <Button variant="outline" size="sm" onClick={startNewConversation}>
           <Plus />
@@ -185,7 +210,7 @@ export function WorkspaceChat({
 
       <div className="flex min-h-0 flex-1 flex-col">
         <Card className="flex min-h-0 flex-1 flex-col">
-          <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 sm:px-4 py-4">
             {messages.length === 0 && (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">
                 <Sparkles className="size-6" />
@@ -201,7 +226,7 @@ export function WorkspaceChat({
               >
                 <div
                   className={cn(
-                    "max-w-[75%] rounded-xl px-3.5 py-2.5 text-sm whitespace-pre-wrap",
+                    "max-w-[88%] sm:max-w-[75%] rounded-xl px-3.5 py-2.5 text-sm whitespace-pre-wrap",
                     m.role === "user"
                       ? "bg-primary text-primary-foreground"
                       : "border border-border/60 bg-muted/40",

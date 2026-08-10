@@ -1,10 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-
-import { NAV_GROUPS, SETTINGS_ITEM } from "@/components/app-sidebar";
-
-const ALL_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), SETTINGS_ITEM];
+import { ALL_ITEMS } from "@/components/nav-config";
 
 export function PageBreadcrumb() {
   const pathname = usePathname();

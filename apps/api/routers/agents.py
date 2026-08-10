@@ -9,6 +9,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from ai_core.agents.memory import query_memory_stream
+from ai_core.agents.planner import ProjectNotFoundError, decompose_project
 from core.auth import verify_jwt
 from core.config import get_settings
 
@@ -128,3 +129,39 @@ def memory_stream(
             conn.close()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+class PlannerDecomposeRequest(BaseModel):
+    project_id: str
+    goal: str
+
+
+@router.post("/planner/decompose")
+def planner_decompose(body: PlannerDecomposeRequest, user_id: str = Depends(verify_jwt)) -> dict:
+    try:
+        project_uuid = uuid.UUID(body.project_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid project_id")
+
+    conn = psycopg.connect(get_settings().database_url)
+    try:
+        client = OpenAI()
+        result = decompose_project(conn, client, user_id, project_uuid, body.goal)
+    except ProjectNotFoundError:
+        raise HTTPException(status_code=404, detail="project not found")
+    except Exception:  # noqa: BLE001 - never leak exception internals to the client
+        conn.rollback()
+        logger.exception("planner_decompose failed for project %s", project_uuid)
+        raise HTTPException(
+            status_code=500, detail="Something went wrong decomposing that goal. Try again."
+        )
+    finally:
+        conn.close()
+
+    return {
+        "project_id": str(result.project_id),
+        "total_tasks": result.total_tasks,
+        "groups": [
+            {"name": g.name, "task_ids": [str(t) for t in g.task_ids]} for g in result.groups
+        ],
+    }

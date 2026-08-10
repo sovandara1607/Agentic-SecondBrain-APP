@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 
 import psycopg
 import pytest
@@ -35,6 +36,35 @@ class FakeOpenAI:
             return chunks()
         item = type("Item", (), {"embedding": [0.1] * 768})
         return type("Response", (), {"data": [item]})
+
+
+class FakePlannerOpenAI:
+    """Stands in for openai.OpenAI in /agents/planner/decompose - only
+    chat.completions.create(..., response_format=json_schema) is called,
+    reading response.choices[0].message.content as a JSON string."""
+
+    def __init__(self, plan: dict):
+        self._plan = plan
+        self.chat = self
+        self.completions = self
+
+    def create(self, **_kwargs):
+        message = type("Message", (), {"content": json.dumps(self._plan)})
+        choice = type("Choice", (), {"message": message})
+        return type("Response", (), {"choices": [choice]})
+
+
+ONE_GROUP_PLAN = {
+    "groups": [
+        {
+            "name": "Planning",
+            "depends_on_groups": [],
+            "tasks": [
+                {"title": "Define MVP scope", "estimated_minutes": 60, "energy_level": "high", "priority": 1},
+            ],
+        },
+    ]
+}
 
 
 class BlowingUpOpenAI:
@@ -182,3 +212,75 @@ def test_memory_stream_rejects_conversation_owned_by_another_user(client, conn):
         )
         count = cur.fetchone()[0]
     assert count == 0
+
+
+def _insert_project(conn, user_id: str, name: str = "MyLMS") -> str:
+    with conn.cursor() as cur:
+        cur.execute(
+            "insert into projects (user_id, name) values (%s, %s) returning id", (user_id, name)
+        )
+        project_id = str(cur.fetchone()[0])
+    conn.commit()
+    return project_id
+
+
+def test_planner_decompose_creates_tasks(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "OpenAI", lambda: FakePlannerOpenAI(ONE_GROUP_PLAN))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+    project_id = _insert_project(conn, TEST_USER_ID)
+
+    try:
+        response = TestClient(app).post(
+            "/agents/planner/decompose",
+            json={"project_id": project_id, "goal": "Launch MyLMS"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total_tasks"] == 1
+        assert body["groups"][0]["name"] == "Planning"
+
+        with conn.cursor() as cur:
+            cur.execute("select count(*) from tasks where project_id = %s", (project_id,))
+            assert cur.fetchone()[0] == 1
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_planner_decompose_rejects_project_owned_by_another_user(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "OpenAI", lambda: FakePlannerOpenAI(ONE_GROUP_PLAN))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+    other_project_id = _insert_project(conn, OTHER_USER_ID, "Not yours")
+
+    try:
+        response = TestClient(app).post(
+            "/agents/planner/decompose",
+            json={"project_id": other_project_id, "goal": "Launch MyLMS"},
+        )
+        assert response.status_code == 404
+        with conn.cursor() as cur:
+            cur.execute("select count(*) from tasks where project_id = %s", (other_project_id,))
+            assert cur.fetchone()[0] == 0
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_planner_decompose_rejects_invalid_project_id(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "OpenAI", lambda: FakePlannerOpenAI(ONE_GROUP_PLAN))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+
+    try:
+        response = TestClient(app).post(
+            "/agents/planner/decompose",
+            json={"project_id": "not-a-uuid", "goal": "Launch MyLMS"},
+        )
+        assert response.status_code == 400
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_planner_decompose_requires_auth():
+    app.dependency_overrides.pop(verify_jwt, None)
+    response = TestClient(app).post(
+        "/agents/planner/decompose", json={"project_id": str(uuid.uuid4()), "goal": "hi"}
+    )
+    assert response.status_code in (401, 403)

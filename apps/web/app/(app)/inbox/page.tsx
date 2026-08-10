@@ -51,9 +51,9 @@ export default async function InboxPage() {
             const note = capture.notes?.[0];
             return (
               <Card key={capture.id}>
-                <CardContent className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm">
+                <CardContent className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
                       {capture.raw_text || capture.source_url}
                     </p>
                     <p className="text-xs text-muted-foreground">
@@ -74,7 +74,7 @@ export default async function InboxPage() {
                       </p>
                     )}
                   </div>
-                  <span className="flex shrink-0 items-center gap-3">
+                  <span className="flex shrink-0 items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-0 border-border/40">
                     <Badge variant={STATUS_VARIANT[capture.status] ?? "muted"}>
                       {capture.status}
                     </Badge>

@@ -105,6 +105,46 @@ export async function createNote(formData: FormData) {
   redirect(`/notes/${note.id}`);
 }
 
+export async function saveNoteContent(data: {
+  id: string;
+  title: string;
+  html: string;
+  note_type: string;
+  project_id: string | null;
+}) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Not authenticated" };
+
+  const { id, title, html, note_type, project_id } = data;
+  if (!id || !title.trim()) return { success: false, error: "Title required" };
+  const content = turndown.turndown(html || "");
+
+  const { error } = await supabase
+    .from("notes")
+    .update({
+      title: title.trim(),
+      content,
+      note_type: note_type || "note",
+      project_id: project_id || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) return { success: false, error: error.message };
+
+  await syncBacklinks(supabase, user.id, id, content);
+
+  revalidatePath(`/notes/${id}`);
+  revalidatePath("/notes");
+  revalidatePath("/dashboard");
+
+  return { success: true };
+}
+
 export async function updateNote(formData: FormData) {
   const supabase = await createClient();
   const {

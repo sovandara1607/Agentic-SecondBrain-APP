@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
 import { DeleteButton } from "@/components/delete-button";
+import { PlannerButton } from "@/components/planner-button";
 import { createProject, deleteProject } from "./actions";
 
 export default async function ProjectsPage() {
@@ -24,10 +25,10 @@ export default async function ProjectsPage() {
         </p>
       </div>
 
-      <form action={createProject} className="flex gap-2">
-        <Input name="name" placeholder="Project name" required />
-        <Input name="overview" placeholder="Overview (optional)" />
-        <Button type="submit">Create</Button>
+      <form action={createProject} className="flex flex-col sm:flex-row gap-2">
+        <Input name="name" placeholder="Project name" required className="w-full" />
+        <Input name="overview" placeholder="Overview (optional)" className="w-full" />
+        <Button type="submit" className="w-full sm:w-auto">Create</Button>
       </form>
 
       {projects?.length ? (
@@ -48,8 +49,13 @@ export default async function ProjectsPage() {
                   </span>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
                 {project.overview || "No overview yet."}
+                <PlannerButton
+                  apiUrl={process.env.NEXT_PUBLIC_API_URL!}
+                  projectId={project.id}
+                  projectName={project.name}
+                />
               </CardContent>
             </Card>
           ))}

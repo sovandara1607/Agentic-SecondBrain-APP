@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { AppSidebar } from "@/components/app-sidebar";
-import { PageBreadcrumb } from "@/components/page-breadcrumb";
+import { AppShell } from "@/components/app-sidebar";
 
 export default async function AppLayout({
   children,
@@ -30,18 +29,12 @@ export default async function AppLayout({
   ]);
 
   return (
-    <div className="flex h-dvh bg-background">
-      <AppSidebar
-        email={user.email ?? ""}
-        tier={profile?.subscription_tier ?? "free"}
-        badges={{ inbox: pendingCaptures ?? 0 }}
-      />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center border-b px-6 py-3">
-          <PageBreadcrumb />
-        </header>
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
-      </div>
-    </div>
+    <AppShell
+      email={user.email ?? ""}
+      tier={profile?.subscription_tier ?? "free"}
+      badges={{ inbox: pendingCaptures ?? 0 }}
+    >
+      {children}
+    </AppShell>
   );
 }
