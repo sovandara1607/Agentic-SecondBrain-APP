@@ -40,7 +40,7 @@ const FEATURES = [
     label: "Calendar",
     href: "/calendar",
     icon: Calendar,
-    description: "Not built yet - task scheduling lands in Phase 2.",
+    description: "Automatically scheduled from your open tasks, priority, and working hours.",
   },
   {
     label: "Reviews",
