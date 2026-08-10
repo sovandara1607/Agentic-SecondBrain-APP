@@ -37,6 +37,22 @@ class FakeOpenAI:
         return type("Response", (), {"data": [item]})
 
 
+class BlowingUpOpenAI:
+    """Simulates a client whose failure message would leak internals -
+    real psycopg/openai exceptions can embed connection strings, secrets,
+    or other backend details in str(exc)."""
+
+    def __init__(self):
+        self.chat = self
+        self.completions = self
+        self.embeddings = self
+
+    def create(self, **kwargs):
+        raise RuntimeError(
+            "connection to postgresql://postgres:super-secret-pw@db:5432/postgres failed"
+        )
+
+
 @pytest.fixture
 def conn():
     with psycopg.connect(DATABASE_URL, autocommit=False) as connection:
@@ -130,6 +146,19 @@ def test_memory_stream_requires_auth():
     app.dependency_overrides.pop(verify_jwt, None)
     response = TestClient(app).post("/agents/memory/stream", json={"query": "hi"})
     assert response.status_code in (401, 403)
+
+
+def test_memory_stream_error_message_never_leaks_exception_internals(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "OpenAI", lambda: BlowingUpOpenAI())
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+    try:
+        response = TestClient(app).post("/agents/memory/stream", json={"query": "hi"})
+        events = _parse_events(response.text)
+        error_event = next(e for e in events if e["type"] == "error")
+        assert "super-secret-pw" not in error_event["message"]
+        assert "postgresql://" not in error_event["message"]
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
 
 
 def test_memory_stream_rejects_conversation_owned_by_another_user(client, conn):

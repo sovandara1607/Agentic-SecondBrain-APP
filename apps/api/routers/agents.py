@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 
 import psycopg
@@ -10,6 +11,8 @@ from pydantic import BaseModel
 from ai_core.agents.memory import query_memory_stream
 from core.auth import verify_jwt
 from core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents")
 
@@ -43,6 +46,10 @@ def memory_stream(
 
     def generate():
         conn = psycopg.connect(get_settings().database_url)
+        # Seeded before the try block so the except handler always has a
+        # value to log, even if the failure happens before a new
+        # conversation id is assigned.
+        conversation_id = body.conversation_id
         try:
             with conn.cursor() as cur:
                 if body.conversation_id:
@@ -108,9 +115,15 @@ def memory_stream(
 
             yield _sse({"type": "citations", "citations": citation_payload})
             yield _sse({"type": "done"})
-        except Exception as exc:  # noqa: BLE001 - surface to the client, don't 500 mid-stream
+        except Exception:  # noqa: BLE001 - surface to the client, don't 500 mid-stream
             conn.rollback()
-            yield _sse({"type": "error", "message": str(exc)})
+            # Log the real exception server-side only - str(exc) can carry
+            # internals (a psycopg connection failure embeds the DSN,
+            # password included) that must never reach the client.
+            logger.exception("memory_stream failed for conversation %s", conversation_id)
+            yield _sse(
+                {"type": "error", "message": "Something went wrong answering that. Try again."}
+            )
         finally:
             conn.close()
 
