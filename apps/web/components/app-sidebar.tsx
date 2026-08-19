@@ -3,23 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  Search,
-  Settings,
-  LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Command,
-  X,
-  Menu,
-  Brain,
-  GitBranch,
-} from "lucide-react";
-
 import { cn } from "@/lib/utils";
 import { signOut } from "@/app/(app)/actions";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { PageBreadcrumb } from "@/components/page-breadcrumb";
+import { Icon } from "@/components/ui/icon";
+import { createClient } from "@/lib/supabase/client";
+import { useLocale } from "@/lib/i18n/locale-provider";
+import { DICTIONARY, type DictionaryKey } from "@/lib/i18n/dictionary";
+
+import { SEARCH_HREF, SEARCH_ICON, type SearchResult } from "@/lib/search-result";
 
 import {
   NAV_GROUPS,
@@ -43,11 +37,18 @@ function NavRow({
   badge?: number;
   onNavigate?: () => void;
 }) {
+  const { t } = useLocale();
+  // nav-config.ts's NavLeaf.id doubles as the dictionary key for every
+  // current nav item - the `in` check is just so a future nav item
+  // added without a matching dictionary entry falls back to its
+  // English title instead of throwing.
+  const label = item.id in DICTIONARY ? t(item.id as DictionaryKey) : item.title;
+
   return (
     <Link
       href={item.href}
       onClick={onNavigate}
-      title={collapsed ? item.title : undefined}
+      title={collapsed ? label : undefined}
       className={cn(
         "group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors font-medium",
         collapsed && "justify-center px-0",
@@ -56,14 +57,14 @@ function NavRow({
           : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
       )}
     >
-      <item.icon
+      <Icon
+        name={item.icon}
+        size={16}
         className={cn(
-          "size-4 shrink-0",
           active ? "text-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground",
         )}
-        strokeWidth={1.75}
       />
-      {!collapsed && <span className="flex-1 truncate">{item.title}</span>}
+      {!collapsed && <span className="flex-1 truncate">{label}</span>}
       {!collapsed && badge ? (
         <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/15 px-1.5 text-[11px] font-semibold text-primary">
           {badge}
@@ -91,9 +92,50 @@ export function AppShell({
   const [accountOpen, setAccountOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const supabase = createClient();
+  const { t } = useLocale();
 
   const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || "v0.1.0";
+
+  // Debounced hybrid search (GET /search) against notes/tasks/projects/
+  // documents content, alongside the static nav-item match below - two
+  // separate result lists in one palette rather than merging them, since
+  // they're fundamentally different things (jump to a page vs. find a
+  // specific note/task).
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!paletteOpen || trimmed.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session) return;
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL!;
+        const res = await fetch(`${apiUrl}/search?q=${encodeURIComponent(trimmed)}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (!res.ok) return;
+        const body = await res.json();
+        setSearchResults(body.results ?? []);
+      } catch {
+        // Silent - the palette still shows nav matches either way, a
+        // failed content search shouldn't block basic navigation.
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, paletteOpen]);
 
   // Close mobile drawer on navigation
   useEffect(() => {
@@ -152,9 +194,16 @@ export function AppShell({
     });
   }
 
-  const matches = ALL_ITEMS.filter((item) =>
-    item.title.toLowerCase().includes(query.toLowerCase()),
-  );
+  const matches = ALL_ITEMS.filter((item) => {
+    const q = query.toLowerCase();
+    // Matched against English AND the current locale's translation - a
+    // Khmer speaker typing "កិច្ចការ" was previously matching nothing,
+    // since this only ever checked nav-config.ts's raw (English) title,
+    // even while NavRow right below was already displaying the
+    // translated label for that same item.
+    const translated = item.id in DICTIONARY ? t(item.id as DictionaryKey) : item.title;
+    return item.title.toLowerCase().includes(q) || translated.toLowerCase().includes(q);
+  });
 
   const sidebarContent = (isMobile = false) => {
     const isCollapsed = isMobile ? false : collapsed;
@@ -196,7 +245,7 @@ export function AppShell({
               aria-label="Close menu"
               className="shrink-0 rounded-md p-1.5 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
             >
-              <X className="size-5" strokeWidth={1.75} />
+              <Icon name="close" size={20} />
             </button>
           )}
         </div>
@@ -211,40 +260,19 @@ export function AppShell({
               }}
               className="rounded-md px-2.5 py-1.5 text-[13px] text-sidebar-foreground/90 hover:bg-sidebar-accent font-medium"
             >
-              Settings
+              {t("settings")}
             </Link>
             <form action={signOut}>
               <button
                 type="submit"
                 className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-sidebar-foreground/90 hover:bg-sidebar-accent font-medium"
               >
-                <LogOut className="size-3.5" strokeWidth={1.75} />
-                Sign out
+                <Icon name="logout" size={14} />
+                {t("signOut")}
               </button>
             </form>
           </div>
         )}
-
-        {/* Quick Search Button */}
-        <button
-          type="button"
-          onClick={openPalette}
-          title={isCollapsed ? "Search (⌘K)" : undefined}
-          className={cn(
-            "mx-3 mb-3 flex items-center gap-2.5 rounded-md border border-sidebar-border bg-sidebar-accent/40 px-2.5 py-[7px] text-sm text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground font-medium",
-            isCollapsed && "mx-auto justify-center border-0 bg-transparent px-1.5 shadow-none",
-          )}
-        >
-          <Search className="size-4 shrink-0 text-sidebar-foreground/60" strokeWidth={1.75} />
-          {!isCollapsed && (
-            <>
-              <span className="flex-1 text-left">Search</span>
-              <kbd className="rounded border border-sidebar-border bg-background/80 px-1 font-mono text-[10px] text-sidebar-foreground/70">
-                {"⌘K"}
-              </kbd>
-            </>
-          )}
-        </button>
 
         {/* Navigation Items */}
         <nav className="flex flex-col gap-4 overflow-y-auto px-3 flex-1">
@@ -273,6 +301,7 @@ export function AppShell({
 
           <div className="flex flex-col gap-0.5 border-t border-sidebar-border pt-3">
             <ThemeToggle collapsed={isCollapsed} />
+            <LanguageSwitcher collapsed={isCollapsed} />
             <NavRow
               item={SETTINGS_ITEM}
               collapsed={isCollapsed}
@@ -291,7 +320,7 @@ export function AppShell({
           title={`Version ${appVersion}`}
         >
           <span className="flex items-center gap-1.5">
-            <GitBranch className="size-3 text-sidebar-foreground/50 shrink-0" />
+            <Icon name="fork_right" size={12} className="text-sidebar-foreground/50" />
             {!isCollapsed && <span>{appVersion}</span>}
           </span>
         </div>
@@ -332,9 +361,9 @@ export function AppShell({
             className="hidden md:flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             {collapsed ? (
-              <PanelLeftOpen className="size-4" strokeWidth={1.75} />
+              <Icon name="dock_to_right" size={16} />
             ) : (
-              <PanelLeftClose className="size-4" strokeWidth={1.75} />
+              <Icon name="dock_to_left" size={16} />
             )}
           </button>
 
@@ -345,10 +374,24 @@ export function AppShell({
             aria-label="Open menu"
             className="flex md:hidden items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
-            <Menu className="size-5" strokeWidth={1.75} />
+            <Icon name="menu" size={20} />
           </button>
 
           <PageBreadcrumb />
+
+          {/* Quick Search / Command Palette Trigger */}
+          <button
+            type="button"
+            onClick={openPalette}
+            aria-label="Search (⌘K)"
+            className="ml-auto flex items-center gap-2.5 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground font-medium"
+          >
+            <Icon name="search" size={16} />
+            <span className="hidden sm:inline">Search</span>
+            <kbd className="hidden sm:inline rounded border border-border bg-background/80 px-1 font-mono text-[10px] text-muted-foreground">
+              {"⌘K"}
+            </kbd>
+          </button>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
@@ -363,10 +406,7 @@ export function AppShell({
           />
           <div className="relative w-full max-w-lg animate-in fade-in zoom-in-95 duration-150 overflow-hidden rounded-xl border border-border bg-card shadow-2xl motion-reduce:animate-none">
             <div className="flex items-center border-b border-border px-4">
-              <Search
-                className="mr-3 size-4 shrink-0 text-muted-foreground"
-                strokeWidth={1.75}
-              />
+              <Icon name="search" size={16} className="mr-3 text-muted-foreground" />
               <input
                 ref={inputRef}
                 value={query}
@@ -386,31 +426,84 @@ export function AppShell({
                 aria-label="Close search"
                 className="ml-2 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
               >
-                <X className="size-4" strokeWidth={1.75} />
+                <Icon name="close" size={16} />
               </button>
             </div>
-            <div className="max-h-72 overflow-y-auto p-1.5">
-              {matches.length ? (
-                matches.map((item) => (
-                  <Link
-                    key={item.id}
-                    href={item.href}
-                    onClick={() => setPaletteOpen(false)}
-                    className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-foreground hover:bg-muted font-medium"
-                  >
-                    <item.icon
-                      className="size-4 text-muted-foreground"
-                      strokeWidth={1.75}
-                    />
-                    {item.title}
-                  </Link>
-                ))
-              ) : (
+            <div className="max-h-96 overflow-y-auto p-1.5">
+              {matches.length > 0 && (
+                <>
+                  {query.trim() && (
+                    <p className="px-2.5 pt-1.5 pb-0.5 text-[11px] font-semibold tracking-wider text-muted-foreground/70 uppercase">
+                      Pages
+                    </p>
+                  )}
+                  {matches.map((item) => (
+                    <Link
+                      key={item.id}
+                      href={item.href}
+                      onClick={() => setPaletteOpen(false)}
+                      className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-foreground hover:bg-muted font-medium"
+                    >
+                      <Icon name={item.icon} size={16} className="text-muted-foreground" />
+                      {item.id in DICTIONARY ? t(item.id as DictionaryKey) : item.title}
+                    </Link>
+                  ))}
+                </>
+              )}
+
+              {query.trim().length >= 2 && (
+                <>
+                  <p className="px-2.5 pt-2.5 pb-0.5 text-[11px] font-semibold tracking-wider text-muted-foreground/70 uppercase">
+                    Notes, tasks & more
+                  </p>
+                  {searchResults.map((r) => {
+                    const href = SEARCH_HREF[r.content_type]?.(r.content_id);
+                    const content = (
+                      <>
+                        <Icon
+                          name={SEARCH_ICON[r.content_type] ?? "search"}
+                          size={16}
+                          className="mt-0.5 shrink-0 text-muted-foreground"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{r.title}</span>
+                          {r.snippet && (
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {r.snippet}
+                            </span>
+                          )}
+                        </span>
+                      </>
+                    );
+                    return href ? (
+                      <Link
+                        key={`${r.content_type}:${r.content_id}`}
+                        href={href}
+                        onClick={() => setPaletteOpen(false)}
+                        className="flex items-start gap-2.5 rounded-md px-2.5 py-2 text-sm text-foreground hover:bg-muted"
+                      >
+                        {content}
+                      </Link>
+                    ) : (
+                      <div
+                        key={`${r.content_type}:${r.content_id}`}
+                        className="flex items-start gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground"
+                      >
+                        {content}
+                      </div>
+                    );
+                  })}
+                  {!searching && searchResults.length === 0 && (
+                    <p className="px-2.5 py-2 text-xs text-muted-foreground italic">
+                      No matches in your notes, tasks, projects, or documents.
+                    </p>
+                  )}
+                </>
+              )}
+
+              {matches.length === 0 && query.trim().length < 2 && (
                 <div className="flex flex-col items-center gap-2 py-8 text-center">
-                  <Command
-                    className="size-5 text-muted-foreground/50"
-                    strokeWidth={1.75}
-                  />
+                  <Icon name="keyboard_command_key" size={20} className="text-muted-foreground/50" />
                   <p className="text-sm text-muted-foreground">
                     No pages match &quot;{query}&quot;.
                   </p>
