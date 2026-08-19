@@ -25,6 +25,10 @@ services:
       # this browser-facing host distinct from localhost:3000 so app auth
       # cookies are not sent to Kong.
       SUPABASE_URL: http://kong:8000
+      # apps/web/proxy.ts's blanket maintenance-mode kill switch - unset/
+      # false by default, flip and recreate this container to enable.
+      MAINTENANCE_MODE: ${MAINTENANCE_MODE:-false}
+      MAINTENANCE_MESSAGE: ${MAINTENANCE_MESSAGE:-}
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -48,6 +52,23 @@ services:
       # both variables for the full rule.
       DATABASE_URL: ${DATABASE_URL_INTERNAL}
       JWT_SECRET: ${JWT_SECRET}
+      # Section 17 hardening: verify via GoTrue's asymmetric signing key
+      # (core/auth.py) rather than the shared secret alone. Same value
+      # every other Supabase service already receives; JWT_SECRET above
+      # stays wired too, as the fallback for a token issued before a key
+      # rotation (auth.py's kid-not-found path).
+      JWT_JWKS: ${JWT_JWKS}
+      # Every /agents/* route (Memory, Planner, Review) calls ai_core.client.get_client(),
+      # which needs this - previously only the worker got it, so these routes
+      # 500'd with "GEMINI_API_KEY environment variable not set" whenever hit
+      # through the containerized api service.
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      # Browser calls to this service (PlannerButton, DailyReviewButton, the
+      # AI Workspace chat) come from web's own origin (NEXT_PUBLIC_SITE_URL),
+      # a different port than this API - needs CORS below (core/config.py,
+      # main.py) or the browser's preflight OPTIONS 405s and the real
+      # request never fires.
+      CORS_ORIGINS: ${NEXT_PUBLIC_SITE_URL}
     ports:
       - "8001:8001"
     depends_on:
@@ -68,6 +89,26 @@ services:
       DATABASE_URL: ${DATABASE_URL_INTERNAL}
       # Phase 1 capture pipeline (packages/ai_core/ai_core/pipeline.py).
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      # Voice/image/PDF captures (packages/ai_core/ai_core/storage.py):
+      # the worker has no per-request user session, so it downloads the
+      # uploaded file with the service role key (bypasses Storage RLS,
+      # same as it bypasses table RLS - Section 11 point 7). Container-
+      # internal URL, same reasoning as api's SUPABASE_URL override above.
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+      # ai_core/email.py's daily digest pass (worker/main.py's
+      # run_daily_digest_pass) - same SMTP_* vars infra/supabase/
+      # docker-compose.yml already maps to GoTrue's GOTRUE_SMTP_* for
+      # auth emails, reused here rather than configuring mail twice.
+      # Unset by default (see .env.example) - ai_core.email.
+      # smtp_configured() gates the whole pass on these actually being
+      # set, so an empty value here just means the digest never fires.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-}
+      APP_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
     depends_on:
       # See the matching comment on the api service above.
       supavisor:

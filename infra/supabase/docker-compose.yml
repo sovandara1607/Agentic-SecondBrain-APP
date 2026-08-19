@@ -161,21 +161,20 @@ services:
 
       # JSON array of signing JWKs (EC private + legacy symmetric)
       # For Podman, use: GOTRUE_JWT_KEYS: ${JWT_KEYS}
-      # Reverted to HS256-only signing (Task 8 self-correction, 2026-08-09):
-      # `utils/add-new-auth-keys.sh --update-env` (Task 2) uncommented this and
-      # populated JWT_KEYS with an EC key first, which GoTrue then used as its
-      # active *signing* key, issuing ES256 access tokens. That contradicts the
-      # documented MVP decision (commit 31738c9) that self-hosted Supabase auth
-      # uses the shared HS256 secret, not JWKS. Commented back out so GoTrue
-      # falls back to GOTRUE_JWT_SECRET (HS256) alone for signing.
-      # Follow-up (2026-08-09): the stale ES256 keypair that
-      # add-new-auth-keys.sh wrote into JWT_KEYS/JWT_JWKS in .env has since
-      # been cleared, so the JWT_JWKS/API_JWT_JWKS/SUPABASE_JWKS fallbacks
-      # below now resolve to their empty defaults and every service verifies
-      # via the plain HS256 shared secret only, matching GoTrue's signing
-      # config; see docs/superpowers/plans/2026-08-07-phase-0-foundation.md
-      # Task 2 section for the full writeup).
-      # GOTRUE_JWT_KEYS: ${JWT_KEYS:-[]}
+      # History: this was briefly enabled by accident (Task 2, 2026-08-09),
+      # reverted the same day (see docs/superpowers/plans/2026-08-07-
+      # phase-0-foundation.md Task 2), then deliberately re-enabled here
+      # as the Section 17 V2 hardening once apps/api/core/auth.py actually
+      # had JWKS verification (with an HS256 fallback for the key-
+      # rotation window) to go with it - the earlier incident was GoTrue
+      # signing ES256 tokens nobody downstream could verify yet, not
+      # asymmetric signing being unsound. GoTrue now picks the EC key
+      # first in JWT_KEYS as its active signing key; every other service
+      # (rest/storage/realtime/studio) and apps/api verify via the same
+      # JWT_JWKS, which carries both the EC public key and the legacy
+      # HS256 key as an 'oct' entry, so already-issued HS256 tokens stay
+      # valid through their natural expiry.
+      GOTRUE_JWT_KEYS: ${JWT_KEYS:-[]}
 
       GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL}
 
@@ -416,14 +415,14 @@ services:
       S3_PROTOCOL_ACCESS_KEY_ID: ${S3_PROTOCOL_ACCESS_KEY_ID}
       S3_PROTOCOL_ACCESS_KEY_SECRET: ${S3_PROTOCOL_ACCESS_KEY_SECRET}
     volumes:
-      - ./volumes/storage:/var/lib/storage:z
+      - storage-data:/var/lib/storage
 
   imgproxy:
     container_name: supabase-imgproxy
     image: darthsim/imgproxy:v3.30.1
     restart: unless-stopped
     volumes:
-      - ./volumes/storage:/var/lib/storage:z
+      - storage-data:/var/lib/storage
     healthcheck:
       test:
         [
@@ -611,3 +610,17 @@ services:
 volumes:
   db-config:
   deno-cache:
+  # storage-api's `file` backend (STORAGE_BACKEND: file below) stores
+  # per-object metadata (content-type, cache-control, etag) as POSIX
+  # extended attributes via fs-xattr, not just the raw bytes. A host
+  # bind mount on Docker Desktop for Mac can't carry xattr syscalls
+  # through to the host (osxfs/gRPC-FUSE/VirtioFS all ENOTSUP this,
+  # even though the host's own APFS supports xattr fine) - confirmed
+  # live: fs-xattr.setSync against a bind-mounted path threw "The file
+  # system does not support extended attributes or has the feature
+  # disabled", the exact error voice/image/PDF capture uploads surfaced,
+  # while the identical call against a named volume succeeded. Named
+  # volumes live on Docker Desktop's internal Linux VM disk (real
+  # ext4/overlay2), which supports xattr, so switching off the bind
+  # mount fixes it regardless of the user's file-sharing settings.
+  storage-data:
