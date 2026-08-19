@@ -1,7 +1,7 @@
 import * as React from "react"
-import { ChevronDown } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { Icon } from "@/components/ui/icon"
 
 function Select({ className, children, ...props }: React.ComponentProps<"select">) {
   return (
@@ -16,7 +16,11 @@ function Select({ className, children, ...props }: React.ComponentProps<"select"
       >
         {children}
       </select>
-      <ChevronDown className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      <Icon
+        name="expand_more"
+        size={14}
+        className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground"
+      />
     </div>
   )
 }
