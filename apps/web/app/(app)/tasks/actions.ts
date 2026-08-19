@@ -181,6 +181,112 @@ export async function toggleTaskDone(formData: FormData) {
   revalidatePath("/calendar");
 }
 
+// Would inserting (task_id depends on targetId) create a cycle? True
+// iff targetId already (transitively) depends on task_id - walked as a
+// bounded BFS in JS rather than a recursive SQL query, since there's no
+// stored procedure for it and this app's other validations are already
+// done in server actions, not DB triggers. ai_core/agents/planner.py's
+// own decompose_project has the same "no cycle detection" caveat
+// documented for its auto-generated dependencies ("a real decomposition
+// ... is a DAG by construction ... worth revisiting if this agent is
+// ever driven by less structured input") - a human manually picking one
+// dependency at a time in this UI *is* that less-structured input, so
+// it gets the check the agent didn't need.
+async function wouldCreateCycle(
+  supabase: SupabaseClient,
+  taskId: string,
+  targetId: string,
+): Promise<boolean> {
+  let frontier = [targetId];
+  const seen = new Set([targetId]);
+  for (let hop = 0; hop < 20 && frontier.length; hop++) {
+    const { data } = await supabase
+      .from("task_dependencies")
+      .select("depends_on_task_id")
+      .in("task_id", frontier);
+    const next = [...new Set((data ?? []).map((d) => d.depends_on_task_id))].filter(
+      (id) => !seen.has(id),
+    );
+    if (next.includes(taskId)) return true;
+    next.forEach((id) => seen.add(id));
+    frontier = next;
+  }
+  return false;
+}
+
+export async function addTaskDependency(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const taskId = String(formData.get("task_id") ?? "");
+  const dependsOnTaskId = String(formData.get("depends_on_task_id") ?? "");
+  if (!taskId || !dependsOnTaskId) return;
+  if (taskId === dependsOnTaskId) {
+    throw new Error("A task can't depend on itself.");
+  }
+
+  // Redundant with RLS (0001_initial_schema.sql's task_dependencies
+  // insert policy already validates ownership of *both* task_id and
+  // depends_on_task_id via exists-subqueries - verified directly against
+  // a real cross-user attempt: 403, zero rows written either direction).
+  // Kept anyway for a clean error instead of a raw Postgres RLS
+  // violation, matching every other ownership check in this codebase.
+  const { data: owned } = await supabase
+    .from("tasks")
+    .select("id")
+    .in("id", [taskId, dependsOnTaskId])
+    .eq("user_id", user.id);
+  if ((owned?.length ?? 0) !== 2) {
+    throw new Error("Couldn't add that dependency.");
+  }
+
+  if (await wouldCreateCycle(supabase, taskId, dependsOnTaskId)) {
+    throw new Error("That would create a dependency cycle.");
+  }
+
+  const { error } = await supabase
+    .from("task_dependencies")
+    .insert({ task_id: taskId, depends_on_task_id: dependsOnTaskId });
+  if (error) throw new Error(`Couldn't add the dependency: ${error.message}`);
+
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath("/tasks");
+  revalidatePath("/calendar");
+}
+
+export async function removeTaskDependency(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const taskId = String(formData.get("task_id") ?? "");
+  const dependsOnTaskId = String(formData.get("depends_on_task_id") ?? "");
+  if (!taskId || !dependsOnTaskId) return;
+
+  // Same defense-in-depth as addTaskDependency above - RLS's delete
+  // policy already scopes this to rows whose task_id the caller owns.
+  const { data: owned } = await supabase.from("tasks").select("id").eq("id", taskId).eq("user_id", user.id);
+  if (!owned?.length) {
+    throw new Error("Couldn't remove that dependency.");
+  }
+
+  const { error } = await supabase
+    .from("task_dependencies")
+    .delete()
+    .eq("task_id", taskId)
+    .eq("depends_on_task_id", dependsOnTaskId);
+  if (error) throw new Error(`Couldn't remove the dependency: ${error.message}`);
+
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath("/tasks");
+  revalidatePath("/calendar");
+}
+
 export async function deleteTask(formData: FormData) {
   const supabase = await createClient();
   const {

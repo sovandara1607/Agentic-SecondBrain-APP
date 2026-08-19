@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { CheckSquare, Square } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
+import { Trans } from "@/components/trans";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -62,7 +64,7 @@ export default async function TasksPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-heading text-2xl font-semibold">Tasks</h1>
+        <h1 className="font-heading text-2xl font-semibold"><Trans id="tasks" /></h1>
         <p className="text-sm text-muted-foreground">
           What needs to get done.
         </p>
@@ -106,7 +108,7 @@ export default async function TasksPage({
           title="Schedule at a specific time (optional) - leave blank to let the scheduler place it automatically"
           className="w-full sm:w-52"
         />
-        <Button type="submit" className="w-full sm:w-auto">Add</Button>
+        <SubmitButton className="w-full sm:w-auto" pendingText="Adding..."><Trans id="add" /></SubmitButton>
       </form>
       <p className="-mt-3 text-xs text-muted-foreground">
         Duration and schedule time are optional - leave the time blank and
@@ -177,11 +179,7 @@ export default async function TasksPage({
                         className="text-muted-foreground hover:text-foreground"
                         aria-label={done ? "Mark open" : "Mark done"}
                       >
-                        {done ? (
-                          <CheckSquare className="size-4" />
-                        ) : (
-                          <Square className="size-4" />
-                        )}
+                        <Icon name={done ? "check_box" : "check_box_outline_blank"} size={16} />
                       </button>
                     </form>
                     <Link
@@ -218,7 +216,7 @@ export default async function TasksPage({
           })
         ) : (
           <EmptyState
-            icon={CheckSquare}
+            icon="check_box"
             title="No tasks yet"
             description="Add one above, or create it from a capture in the Inbox once the pipeline is wired up."
           />

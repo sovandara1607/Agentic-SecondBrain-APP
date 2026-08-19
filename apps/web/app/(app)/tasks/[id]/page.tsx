@@ -1,14 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  ArrowLeft,
-  CalendarClock,
-  CheckSquare,
-  Square,
-  Sparkles,
-} from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { createClient } from "@/lib/supabase/server";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
@@ -16,11 +9,16 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DeleteButton } from "@/components/delete-button";
+import { SubmitButton } from "@/components/submit-button";
+import { FormSubmitButton } from "@/components/form-submit-button";
+import { Trans } from "@/components/trans";
 import {
   updateTask,
   deleteTask,
   clearTaskSchedule,
   toggleTaskDone,
+  addTaskDependency,
+  removeTaskDependency,
 } from "../actions";
 
 // Renders in the server's local timezone (TZ in .env), matching how
@@ -51,37 +49,74 @@ export default async function TaskPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
-  const [{ data: task }, { data: projects }, { data: timeBlock }] =
-    await Promise.all([
-      supabase
-        .from("tasks")
-        .select(
-          "id, title, context, status, priority, energy_level, estimated_minutes, deadline, project_id, capture_id, created_at",
-        )
-        .eq("id", id)
-        .single(),
-      supabase.from("projects").select("id, name").order("name"),
-      supabase
-        .from("time_blocks")
-        .select("starts_at, ends_at")
-        .eq("task_id", id)
-        .eq("status", "scheduled")
-        .maybeSingle(),
-    ]);
+  const [
+    { data: task },
+    { data: projects },
+    { data: timeBlock },
+    { data: blockedByRows },
+    { data: blocksRows },
+    { data: candidateTasks },
+  ] = await Promise.all([
+    supabase
+      .from("tasks")
+      .select(
+        "id, title, context, status, priority, energy_level, estimated_minutes, deadline, project_id, capture_id, created_at",
+      )
+      .eq("id", id)
+      .single(),
+    supabase.from("projects").select("id, name").order("name"),
+    supabase
+      .from("time_blocks")
+      .select("starts_at, ends_at")
+      .eq("task_id", id)
+      .eq("status", "scheduled")
+      .maybeSingle(),
+    // task_dependencies has two foreign keys into tasks (task_id and
+    // depends_on_task_id), which PostgREST can't auto-embed through
+    // without disambiguating hints - plain id pairs here, titles/status
+    // resolved via a separate lookup below instead of risking the wrong
+    // embed syntax (see the Dashboard's relationships fix for the same
+    // lesson learned the hard way).
+    supabase.from("task_dependencies").select("depends_on_task_id").eq("task_id", id),
+    supabase.from("task_dependencies").select("task_id").eq("depends_on_task_id", id),
+    supabase.from("tasks").select("id, title, status").neq("id", id).order("title"),
+  ]);
 
   if (!task) {
     notFound();
   }
 
+  const blockedByIds = (blockedByRows ?? []).map((r) => r.depends_on_task_id);
+  const blocksIds = (blocksRows ?? []).map((r) => r.task_id);
+  const relatedIds = [...new Set([...blockedByIds, ...blocksIds])];
+  const { data: relatedTasks } = relatedIds.length
+    ? await supabase.from("tasks").select("id, title, status").in("id", relatedIds)
+    : { data: [] as { id: string; title: string; status: string }[] };
+  const relatedById = new Map((relatedTasks ?? []).map((t) => [t.id, t]));
+  const blockedBy = blockedByIds.map((tid) => relatedById.get(tid)).filter(Boolean) as {
+    id: string;
+    title: string;
+    status: string;
+  }[];
+  const blocks = blocksIds.map((tid) => relatedById.get(tid)).filter(Boolean) as {
+    id: string;
+    title: string;
+    status: string;
+  }[];
+  const isBlocked = blockedBy.some((t) => t.status !== "done");
+  const dependencyCandidates = (candidateTasks ?? []).filter(
+    (t) => !blockedByIds.includes(t.id),
+  );
+
   const done = task.status === "done";
 
   return (
-    <article className="max-w-xl space-y-4">
+    <article className="mx-auto max-w-xl space-y-4">
       <Link
         href="/tasks"
         className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
       >
-        <ArrowLeft className="size-3.5" strokeWidth={1.75} />
+        <Icon name="arrow_back" size={14} />
         Back to Tasks
       </Link>
 
@@ -95,11 +130,7 @@ export default async function TaskPage({
               className="text-muted-foreground hover:text-foreground"
               aria-label={done ? "Mark open" : "Mark done"}
             >
-              {done ? (
-                <CheckSquare className="size-5" strokeWidth={1.75} />
-              ) : (
-                <Square className="size-5" strokeWidth={1.75} />
-              )}
+              <Icon name={done ? "check_box" : "check_box_outline_blank"} size={20} />
             </button>
           </form>
           <div>
@@ -110,15 +141,23 @@ export default async function TaskPage({
             </h1>
             {task.capture_id && (
               <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Sparkles className="size-3" strokeWidth={1.75} />
+                <Icon name="auto_awesome" size={12} />
                 Generated from a capture
               </p>
             )}
           </div>
         </div>
-        <Badge variant={STATUS_VARIANT[task.status] ?? "muted"}>
-          {task.status}
-        </Badge>
+        <span className="flex shrink-0 items-center gap-1.5">
+          {isBlocked && (
+            <Badge variant="destructive" className="gap-1">
+              <Icon name="link" size={11} />
+              Blocked
+            </Badge>
+          )}
+          <Badge variant={STATUS_VARIANT[task.status] ?? "muted"}>
+            {task.status}
+          </Badge>
+        </span>
       </div>
 
       <form action={updateTask} className="space-y-4">
@@ -215,7 +254,7 @@ export default async function TaskPage({
         <Card className={timeBlock ? "border-primary/30" : undefined}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
-              <CalendarClock className="size-4 text-primary" strokeWidth={1.75} />
+              <Icon name="event" size={16} className="text-primary" />
               Schedule
             </CardTitle>
           </CardHeader>
@@ -239,14 +278,114 @@ export default async function TaskPage({
         </Card>
 
         <div className="flex items-center justify-between">
-          <Button type="submit">Save changes</Button>
+          <SubmitButton pendingText="Saving..."><Trans id="saveChanges" /></SubmitButton>
           {timeBlock && (
-            <Button type="submit" formAction={clearTaskSchedule} variant="outline" size="sm">
+            <SubmitButton formAction={clearTaskSchedule} variant="outline" size="sm" pendingText="Clearing...">
               Clear schedule
-            </Button>
+            </SubmitButton>
           )}
         </div>
       </form>
+
+      <Card className={isBlocked ? "border-destructive/30" : undefined}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Icon name="link" size={16} className={isBlocked ? "text-destructive" : undefined} />
+            Dependencies
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Blocked by
+            </p>
+            {isBlocked && (
+              <p className="flex items-center gap-1.5 text-xs text-destructive">
+                <Icon name="warning" size={12} />
+                Won&apos;t be scheduled until the tasks below are done.
+              </p>
+            )}
+            {blockedBy.length ? (
+              <ul className="space-y-1">
+                {blockedBy.map((t) => (
+                  <li key={t.id} className="flex items-center gap-2">
+                    <Icon
+                      name={t.status === "done" ? "check_box" : "check_box_outline_blank"}
+                      size={14}
+                      className="shrink-0 text-muted-foreground"
+                    />
+                    <Link href={`/tasks/${t.id}`} className="flex-1 truncate text-sm hover:underline">
+                      {t.title}
+                    </Link>
+                    <form action={removeTaskDependency}>
+                      <input type="hidden" name="task_id" value={task.id} />
+                      <input type="hidden" name="depends_on_task_id" value={t.id} />
+                      <FormSubmitButton
+                        aria-label={`Remove dependency on ${t.title}`}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Icon name="close" size={14} />
+                      </FormSubmitButton>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">Nothing blocking this task.</p>
+            )}
+            {dependencyCandidates.length > 0 && (
+              <form action={addTaskDependency} className="flex gap-2 pt-1">
+                <input type="hidden" name="task_id" value={task.id} />
+                <Select name="depends_on_task_id" className="flex-1" defaultValue="">
+                  <option value="" disabled>
+                    Add a dependency...
+                  </option>
+                  {dependencyCandidates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.title}
+                    </option>
+                  ))}
+                </Select>
+                <SubmitButton size="sm" variant="outline" pendingText="Adding...">
+                  Add
+                </SubmitButton>
+              </form>
+            )}
+          </div>
+
+          {blocks.length > 0 && (
+            <div className="space-y-1.5 border-t border-border/40 pt-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Blocks
+              </p>
+              <ul className="space-y-1">
+                {blocks.map((t) => (
+                  <li key={t.id} className="flex items-center gap-2">
+                    <Icon
+                      name={t.status === "done" ? "check_box" : "check_box_outline_blank"}
+                      size={14}
+                      className="shrink-0 text-muted-foreground"
+                    />
+                    <Link href={`/tasks/${t.id}`} className="flex-1 truncate text-sm hover:underline">
+                      {t.title}
+                    </Link>
+                    <form action={removeTaskDependency}>
+                      <input type="hidden" name="task_id" value={t.id} />
+                      <input type="hidden" name="depends_on_task_id" value={task.id} />
+                      <FormSubmitButton
+                        aria-label={`Remove ${task.title} as a dependency of ${t.title}`}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Icon name="close" size={14} />
+                      </FormSubmitButton>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <DeleteButton
         action={deleteTask}

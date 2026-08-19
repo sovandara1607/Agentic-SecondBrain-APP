@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 export default function TaskDetailLoading() {
   return (
-    <article className="max-w-xl space-y-4">
+    <article className="mx-auto max-w-xl space-y-4">
       {/* Back button */}
       <Skeleton className="h-4 w-24" />
 
@@ -76,6 +76,23 @@ export default function TaskDetailLoading() {
           <Skeleton className="h-9 w-28 rounded-md" />
         </div>
       </div>
+
+      {/* Dependencies card */}
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-4 w-28" />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-5 w-2/3" />
+            <div className="flex gap-2 pt-1">
+              <Skeleton className="h-8 flex-1 rounded-md" />
+              <Skeleton className="h-8 w-14 rounded-md" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Skeleton className="h-9 w-24 rounded-md" />
     </article>
