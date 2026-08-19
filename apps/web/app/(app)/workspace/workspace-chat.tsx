@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Plus, Send, Sparkles } from "lucide-react";
-
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
+import { friendlyError } from "@/lib/friendly-error";
+import { useLocale } from "@/lib/i18n/locale-provider";
 
 type Citation = { content_type: string; content_id: string; title: string };
 type ChatMessage = {
@@ -35,6 +36,7 @@ export function WorkspaceChat({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const { locale } = useLocale();
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
@@ -98,7 +100,7 @@ export function WorkspaceChat({
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ query, conversation_id: conversationId }),
+        body: JSON.stringify({ query, conversation_id: conversationId, language: locale }),
       });
 
       if (!response.ok || !response.body) {
@@ -154,7 +156,8 @@ export function WorkspaceChat({
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      console.error("workspace chat stream failed:", err);
+      setError(friendlyError(err));
     } finally {
       setStreaming(false);
     }
@@ -165,7 +168,7 @@ export function WorkspaceChat({
       {/* Mobile Chat Switcher & New Chat Button */}
       <div className="flex md:hidden items-center gap-2 pb-1">
         <Button variant="outline" size="sm" onClick={startNewConversation} className="shrink-0">
-          <Plus className="size-4" />
+          <Icon name="add" size={16} />
           New
         </Button>
         {conversations.length > 0 && (
@@ -189,7 +192,7 @@ export function WorkspaceChat({
 
       <aside className="hidden w-56 shrink-0 flex-col gap-2 md:flex">
         <Button variant="outline" size="sm" onClick={startNewConversation}>
-          <Plus />
+          <Icon name="add" size={16} />
           New chat
         </Button>
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
@@ -213,7 +216,7 @@ export function WorkspaceChat({
           <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 sm:px-4 py-4">
             {messages.length === 0 && (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">
-                <Sparkles className="size-6" />
+                <Icon name="auto_awesome" size={24} />
                 <p className="text-sm">
                   Ask about a past decision, a note, or what&apos;s on your plate.
                 </p>
@@ -279,7 +282,7 @@ export function WorkspaceChat({
               disabled={streaming}
             />
             <Button size="icon" onClick={sendMessage} disabled={streaming || !input.trim()}>
-              <Send />
+              <Icon name="send" size={16} />
             </Button>
           </div>
         </Card>
