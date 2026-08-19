@@ -279,3 +279,469 @@ def test_planner_decompose_requires_auth():
         "/agents/planner/decompose", json={"project_id": str(uuid.uuid4()), "goal": "hi"}
     )
     assert response.status_code in (401, 403)
+
+
+class FakeReviewGeminiClient:
+    """Stands in for ai_core.client.GeminiClient in /agents/review/daily - only
+    chat.completions.create(..., response_format=json_schema) is called,
+    reading response.content as a JSON string."""
+
+    def __init__(self, priorities: list[str]):
+        self._priorities = priorities
+        self.chat = self
+        self.completions = self
+
+    def create(self, **_kwargs):
+        return type("ChatCompletion", (), {"content": json.dumps({"priorities": self._priorities})})
+
+
+def test_review_daily_generates_and_persists_a_review(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeReviewGeminiClient(["Rest up"]))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+    project_id = _insert_project(conn, TEST_USER_ID)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            insert into tasks (user_id, project_id, title, status, completed_at)
+            values (%s, %s, 'Ship it', 'done', now())
+            """,
+            (TEST_USER_ID, project_id),
+        )
+    conn.commit()
+
+    try:
+        response = TestClient(app).post("/agents/review/daily", json={})
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["completed_tasks"]) == 1
+        assert body["tomorrow_priorities"] == ["Rest up"]
+
+        with conn.cursor() as cur:
+            cur.execute("select count(*) from daily_reviews where user_id = %s", (TEST_USER_ID,))
+            assert cur.fetchone()[0] == 1
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+        with conn.cursor() as cur:
+            cur.execute("delete from daily_reviews where user_id = %s", (TEST_USER_ID,))
+        conn.commit()
+
+
+def test_review_daily_accepts_an_explicit_review_date(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeReviewGeminiClient([]))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+
+    try:
+        response = TestClient(app).post("/agents/review/daily", json={"review_date": "2026-08-01"})
+        assert response.status_code == 200
+        assert response.json()["review_date"] == "2026-08-01"
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+        with conn.cursor() as cur:
+            cur.execute("delete from daily_reviews where user_id = %s", (TEST_USER_ID,))
+        conn.commit()
+
+
+def test_review_daily_rejects_invalid_review_date(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeReviewGeminiClient([]))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+
+    try:
+        response = TestClient(app).post("/agents/review/daily", json={"review_date": "not-a-date"})
+        assert response.status_code == 400
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_review_daily_requires_auth():
+    app.dependency_overrides.pop(verify_jwt, None)
+    response = TestClient(app).post("/agents/review/daily", json={})
+    assert response.status_code in (401, 403)
+
+
+class FakeWeeklyReviewGeminiClient:
+    """Stands in for ai_core.client.GeminiClient in /agents/review/weekly - only
+    chat.completions.create(..., response_format=json_schema) is called,
+    reading response.content as a JSON string."""
+
+    def __init__(self, recommendations: list[str]):
+        self._recommendations = recommendations
+        self.chat = self
+        self.completions = self
+
+    def create(self, **_kwargs):
+        return type(
+            "ChatCompletion", (), {"content": json.dumps({"recommendations": self._recommendations})}
+        )
+
+
+def test_review_weekly_generates_and_persists_a_review(conn, monkeypatch):
+    monkeypatch.setattr(
+        agents_module, "get_client", lambda: FakeWeeklyReviewGeminiClient(["Push harder"])
+    )
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+    project_id = _insert_project(conn, TEST_USER_ID)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            insert into tasks (user_id, project_id, title, status, completed_at)
+            values (%s, %s, 'Ship it', 'done', now())
+            """,
+            (TEST_USER_ID, project_id),
+        )
+    conn.commit()
+
+    try:
+        response = TestClient(app).post("/agents/review/weekly", json={})
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["project_progress"]) == 1
+        assert body["recommendations"] == ["Push harder"]
+
+        with conn.cursor() as cur:
+            cur.execute("select count(*) from weekly_reviews where user_id = %s", (TEST_USER_ID,))
+            assert cur.fetchone()[0] == 1
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+        with conn.cursor() as cur:
+            cur.execute("delete from weekly_reviews where user_id = %s", (TEST_USER_ID,))
+        conn.commit()
+
+
+def test_review_weekly_accepts_an_explicit_week_start(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeWeeklyReviewGeminiClient([]))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+
+    try:
+        response = TestClient(app).post("/agents/review/weekly", json={"week_start": "2026-08-10"})
+        assert response.status_code == 200
+        assert response.json()["week_start"] == "2026-08-10"
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+        with conn.cursor() as cur:
+            cur.execute("delete from weekly_reviews where user_id = %s", (TEST_USER_ID,))
+        conn.commit()
+
+
+def test_review_weekly_rejects_invalid_week_start(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeWeeklyReviewGeminiClient([]))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+
+    try:
+        response = TestClient(app).post("/agents/review/weekly", json={"week_start": "not-a-date"})
+        assert response.status_code == 400
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_review_weekly_requires_auth():
+    app.dependency_overrides.pop(verify_jwt, None)
+    response = TestClient(app).post("/agents/review/weekly", json={})
+    assert response.status_code in (401, 403)
+
+
+class FakeMonthlyReviewGeminiClient:
+    """Stands in for ai_core.client.GeminiClient in /agents/review/monthly - only
+    chat.completions.create(..., response_format=json_schema) is called,
+    reading response.content as a JSON string."""
+
+    def __init__(self, recommendations: list[str]):
+        self._recommendations = recommendations
+        self.chat = self
+        self.completions = self
+
+    def create(self, **_kwargs):
+        return type(
+            "ChatCompletion", (), {"content": json.dumps({"recommendations": self._recommendations})}
+        )
+
+
+def test_review_monthly_rolls_up_weekly_reviews(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeMonthlyReviewGeminiClient(["Push harder"]))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+    with conn.cursor() as cur:
+        cur.execute(
+            "insert into weekly_reviews (user_id, week_start) values (%s, '2026-08-03')",
+            (TEST_USER_ID,),
+        )
+    conn.commit()
+
+    try:
+        response = TestClient(app).post("/agents/review/monthly", json={"month_start": "2026-08-15"})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["month_start"] == "2026-08-01"  # normalized to the 1st
+        assert body["weeks_included"] == 1
+        assert body["recommendations"] == ["Push harder"]
+
+        with conn.cursor() as cur:
+            cur.execute("select count(*) from monthly_reviews where user_id = %s", (TEST_USER_ID,))
+            assert cur.fetchone()[0] == 1
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+        with conn.cursor() as cur:
+            cur.execute("delete from monthly_reviews where user_id = %s", (TEST_USER_ID,))
+            cur.execute("delete from weekly_reviews where user_id = %s", (TEST_USER_ID,))
+        conn.commit()
+
+
+def test_review_monthly_rejects_invalid_month_start(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeMonthlyReviewGeminiClient([]))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+
+    try:
+        response = TestClient(app).post("/agents/review/monthly", json={"month_start": "not-a-date"})
+        assert response.status_code == 400
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_review_monthly_requires_auth():
+    app.dependency_overrides.pop(verify_jwt, None)
+    response = TestClient(app).post("/agents/review/monthly", json={})
+    assert response.status_code in (401, 403)
+
+
+class FakeWriterGeminiClient:
+    """Stands in for ai_core.client.GeminiClient in /agents/writer/draft - calls
+    embeddings.create(...) (via ai_core.context.build_context) and
+    chat.completions.create(...) (non-streaming, reading .content)."""
+
+    def __init__(self, draft_content: str):
+        self._draft_content = draft_content
+        self.chat = self
+        self.completions = self
+        self.embeddings = self
+
+    def create(self, **kwargs):
+        if "messages" in kwargs:
+            return type("ChatCompletion", (), {"content": self._draft_content})
+        return type("EmbeddingResponse", (), {"embedding": [0.1] * 768})
+
+
+def test_writer_draft_creates_a_note(conn, monkeypatch):
+    monkeypatch.setattr(
+        agents_module, "get_client", lambda: FakeWriterGeminiClient("# Investor update\n\nGood month.")
+    )
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+
+    try:
+        response = TestClient(app).post(
+            "/agents/writer/draft", json={"prompt": "Draft an investor update", "doc_type": "email"}
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["title"] == "Investor update"
+        assert body["action"] == "created"
+
+        with conn.cursor() as cur:
+            cur.execute("select count(*) from notes where id = %s", (body["note_id"],))
+            assert cur.fetchone()[0] == 1
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_writer_draft_refines_an_existing_note(conn, monkeypatch):
+    monkeypatch.setattr(
+        agents_module, "get_client", lambda: FakeWriterGeminiClient("# Report\n\nRevised.")
+    )
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+    with conn.cursor() as cur:
+        cur.execute(
+            "insert into notes (user_id, title, content, note_type) values (%s, 'Report', 'Old.', 'summary') returning id",
+            (TEST_USER_ID,),
+        )
+        note_id = str(cur.fetchone()[0])
+    conn.commit()
+
+    try:
+        response = TestClient(app).post(
+            "/agents/writer/draft",
+            json={"prompt": "tighten it up", "existing_note_id": note_id},
+        )
+        assert response.status_code == 200
+        assert response.json()["action"] == "updated"
+        assert response.json()["note_id"] == note_id
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_writer_draft_rejects_note_owned_by_another_user(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeWriterGeminiClient("# X\n\nY."))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+    with conn.cursor() as cur:
+        cur.execute(
+            "insert into notes (user_id, title, content) values (%s, 'Not yours', 'x') returning id",
+            (OTHER_USER_ID,),
+        )
+        other_note_id = str(cur.fetchone()[0])
+    conn.commit()
+
+    try:
+        response = TestClient(app).post(
+            "/agents/writer/draft",
+            json={"prompt": "revise it", "existing_note_id": other_note_id},
+        )
+        assert response.status_code == 404
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_writer_draft_rejects_invalid_existing_note_id(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeWriterGeminiClient("# X\n\nY."))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+
+    try:
+        response = TestClient(app).post(
+            "/agents/writer/draft",
+            json={"prompt": "revise it", "existing_note_id": "not-a-uuid"},
+        )
+        assert response.status_code == 400
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_writer_draft_requires_auth():
+    app.dependency_overrides.pop(verify_jwt, None)
+    response = TestClient(app).post("/agents/writer/draft", json={"prompt": "hi"})
+    assert response.status_code in (401, 403)
+
+
+class FakeWorkflowGeminiClient:
+    """Stands in for ai_core.client.GeminiClient in /agents/workflow/check - only
+    chat.completions.create(..., response_format=json_schema) is called,
+    reading response.content as a JSON string."""
+
+    def __init__(self, proposals: list[dict]):
+        self._proposals = proposals
+        self.chat = self
+        self.completions = self
+
+    def create(self, **_kwargs):
+        return type("ChatCompletion", (), {"content": json.dumps({"proposals": self._proposals})})
+
+
+def test_workflow_check_returns_proposals_for_flagged_projects(conn, monkeypatch):
+    proposals = [{"project_name": "MyLMS", "issue": "A task is at risk.", "proposed_action": "Reschedule it."}]
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeWorkflowGeminiClient(proposals))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+    project_id = _insert_project(conn, TEST_USER_ID, "MyLMS")
+    with conn.cursor() as cur:
+        cur.execute(
+            "insert into tasks (user_id, project_id, title, status) values (%s, %s, 'Blocked', 'at_risk')",
+            (TEST_USER_ID, project_id),
+        )
+    conn.commit()
+
+    try:
+        response = TestClient(app).post("/agents/workflow/check")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["projects_flagged"] == 1
+        assert len(body["proposals"]) == 1
+        assert body["proposals"][0]["project_name"] == "MyLMS"
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+        with conn.cursor() as cur:
+            cur.execute("delete from agent_actions where user_id = %s", (TEST_USER_ID,))
+        conn.commit()
+
+
+def test_workflow_check_returns_no_proposals_when_nothing_is_flagged(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeWorkflowGeminiClient([]))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+    _insert_project(conn, TEST_USER_ID, "Quiet project")
+
+    try:
+        response = TestClient(app).post("/agents/workflow/check")
+        assert response.status_code == 200
+        assert response.json()["proposals"] == []
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_workflow_check_requires_auth():
+    app.dependency_overrides.pop(verify_jwt, None)
+    response = TestClient(app).post("/agents/workflow/check")
+    assert response.status_code in (401, 403)
+
+
+class FakeResearchGeminiClient:
+    """Stands in for ai_core.client.GeminiClient in /agents/research/synthesize -
+    only chat.completions.create(...) (non-streaming, reading .content) is
+    called."""
+
+    def __init__(self, content: str):
+        self._content = content
+        self.chat = self
+        self.completions = self
+
+    def create(self, **_kwargs):
+        return type("ChatCompletion", (), {"content": self._content})
+
+
+def test_research_synthesize_creates_a_note(conn, monkeypatch):
+    monkeypatch.setattr(
+        agents_module, "get_client", lambda: FakeResearchGeminiClient("# Findings\n\nSummary.")
+    )
+    monkeypatch.setattr(
+        "ai_core.agents.research.fetch_url_text", lambda url: "Fetched page text."
+    )
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+
+    try:
+        response = TestClient(app).post(
+            "/agents/research/synthesize",
+            json={"topic": "caching strategies", "urls": ["https://example.com/a"]},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["title"] == "Findings"
+        assert body["sources"][0]["fetched"] is True
+
+        with conn.cursor() as cur:
+            cur.execute("select count(*) from notes where id = %s", (body["note_id"],))
+            assert cur.fetchone()[0] == 1
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_research_synthesize_requires_at_least_one_url(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeResearchGeminiClient("# X\n\nY."))
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+
+    try:
+        response = TestClient(app).post(
+            "/agents/research/synthesize", json={"topic": "x", "urls": []}
+        )
+        assert response.status_code == 400
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_research_synthesize_returns_422_when_every_source_fails(conn, monkeypatch):
+    monkeypatch.setattr(agents_module, "get_client", lambda: FakeResearchGeminiClient("unused"))
+
+    def raise_fetch_error(url):
+        from ai_core.webfetch import FetchError
+
+        raise FetchError("nope")
+
+    monkeypatch.setattr("ai_core.agents.research.fetch_url_text", raise_fetch_error)
+    app.dependency_overrides[verify_jwt] = lambda: TEST_USER_ID
+
+    try:
+        response = TestClient(app).post(
+            "/agents/research/synthesize",
+            json={"topic": "x", "urls": ["https://example.com/unreachable"]},
+        )
+        assert response.status_code == 422
+    finally:
+        app.dependency_overrides.pop(verify_jwt, None)
+
+
+def test_research_synthesize_requires_auth():
+    app.dependency_overrides.pop(verify_jwt, None)
+    response = TestClient(app).post(
+        "/agents/research/synthesize", json={"topic": "x", "urls": ["https://example.com"]}
+    )
+    assert response.status_code in (401, 403)
