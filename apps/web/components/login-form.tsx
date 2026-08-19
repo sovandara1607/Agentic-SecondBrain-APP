@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Icon } from "@/components/ui/icon";
 import { GitHubOAuthButton } from "@/components/github-oauth-button";
+import { friendlyError } from "@/lib/friendly-error";
 
 type LoginFormProps = {
   initialError?: string | null;
@@ -16,18 +18,23 @@ export function LoginForm({ initialError = null }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(initialError);
+  const [busy, setBusy] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setBusy(true);
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      setError(error.message);
+      console.error("login failed:", error);
+      setError(friendlyError(error));
+      setBusy(false);
       return;
     }
     router.push("/dashboard");
     router.refresh();
+    // Not resetting busy here - about to navigate away.
   }
 
   return (
@@ -48,8 +55,9 @@ export function LoginForm({ initialError = null }: LoginFormProps) {
         required
       />
       {error && <p className="text-sm text-red-500">{error}</p>}
-      <Button type="submit" className="w-full">
-        Log in
+      <Button type="submit" className="w-full gap-1.5" disabled={busy}>
+        {busy && <Icon name="progress_activity" size={16} className="animate-spin" />}
+        {busy ? "Logging in..." : "Log in"}
       </Button>
       <div className="flex items-center gap-3">
         <div className="h-px flex-1 bg-border" />
