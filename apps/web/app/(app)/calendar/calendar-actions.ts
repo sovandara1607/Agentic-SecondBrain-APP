@@ -51,12 +51,20 @@ export async function scheduleTaskBlock(data: {
     if (error) return { success: false, error: error.message };
   }
 
-  // Update task status from inbox/at_risk to todo if needed
+  // Update task status from open/at_risk to scheduled if needed - "todo"
+  // and "inbox" aren't real values in this schema's status enum (Section
+  // 4: open | scheduled | in_progress | done | at_risk | canceled), and
+  // since the column has no CHECK constraint, writing them silently
+  // "succeeded" while producing tasks nothing else in the app recognized
+  // (wrong badge, excluded from the scheduler's status='open' candidate
+  // set, wrong Dashboard counts). Same status apps/web/app/(app)/tasks/
+  // actions.ts's applyManualSchedule already uses for the equivalent
+  // task-detail-page scheduling path.
   await supabase
     .from("tasks")
-    .update({ status: "todo" })
+    .update({ status: "scheduled" })
     .eq("id", taskId)
-    .in("status", ["inbox", "at_risk"]);
+    .in("status", ["open", "at_risk"]);
 
   revalidatePath("/calendar");
   revalidatePath("/tasks");
@@ -88,7 +96,7 @@ export async function createAndScheduleTask(formData: FormData) {
       user_id: user.id,
       title,
       priority,
-      status: "todo",
+      status: "scheduled", // a time_block is created for it immediately below
       project_id: projectId,
     })
     .select("id")

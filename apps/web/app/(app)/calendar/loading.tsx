@@ -10,8 +10,9 @@ export default function CalendarLoading() {
           <Skeleton className="h-7 w-28" />
           <Skeleton className="h-4 w-96 max-w-full" />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Skeleton className="h-9 w-32 rounded-md" />
+          <Skeleton className="h-9 w-28 rounded-lg" />
           <div className="flex items-center gap-1">
             <Skeleton className="size-9 rounded-md" />
             <Skeleton className="h-9 w-16 rounded-md" />
