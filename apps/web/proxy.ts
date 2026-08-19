@@ -5,6 +5,17 @@ import { NextResponse, type NextRequest } from "next/server";
 // `middleware` export is now `proxy`); functionality is unchanged. See
 // node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md
 export async function proxy(request: NextRequest) {
+  // Blanket kill switch for the whole app, gated purely by an env var
+  // (no DB flag, no admin toggle UI) - this is a single-operator VPS
+  // deployment (Section 18), so "set MAINTENANCE_MODE=true and recreate
+  // the web container" is the right amount of ceremony, not a missing
+  // feature. Checked before the Supabase session refresh below on
+  // purpose: maintenance mode needs to work even when Supabase itself
+  // is what's down, so this can't depend on that call succeeding.
+  if (process.env.MAINTENANCE_MODE === "true" && request.nextUrl.pathname !== "/maintenance") {
+    return NextResponse.rewrite(new URL("/maintenance", request.url));
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
