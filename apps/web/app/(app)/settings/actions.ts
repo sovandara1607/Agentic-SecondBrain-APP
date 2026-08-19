@@ -128,10 +128,16 @@ export async function revokeApiToken(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
+  // RLS (0008_api_tokens.sql's "update own rows" policy) already blocks
+  // cross-user revocation at the database layer, but scoping by user_id
+  // here too avoids a silent, confusing no-op if a stale/tampered id is
+  // submitted - the caller gets 0 rows affected either way, this just
+  // makes the intent explicit rather than relying on RLS alone.
   const { error } = await supabase
     .from("api_tokens")
     .update({ revoked_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
   if (error) throw new Error(`Couldn't revoke the token: ${error.message}`);
 
   revalidatePath("/settings");
