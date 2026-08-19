@@ -35,7 +35,33 @@ from datetime import date
 from typing import Any
 
 import psycopg
-from ai_core.client import get_client, EMBEDDING_DIMENSIONS, CHAT_MODEL
+from ai_core.client import get_client, EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, CHAT_MODEL
+from ai_core.storage import download_capture_object
+
+# Voice/image/PDF captures (Section 2.2/16) carry no raw_text of their
+# own - extension-to-mime-type is enough here since the upload route only
+# ever accepts these specific types (apps/web/app/api/capture/upload-url).
+_MEDIA_MIME_TYPES = {
+    ".webm": "audio/webm",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".pdf": "application/pdf",
+}
+
+_EXTRACTION_PROMPTS = {
+    "voice": "Transcribe this audio recording verbatim, as plain text. No commentary.",
+    "image": (
+        "Transcribe any text visible in this image verbatim, then briefly describe the image "
+        "itself in a sentence or two."
+    ),
+    "pdf": "Extract the full text content of this PDF document verbatim. No commentary.",
+}
 
 # link_related_notes: cosine similarity threshold and cap - "capped at a
 # small number of strongest links to keep the graph meaningful rather
@@ -220,7 +246,7 @@ def _embed_and_link_related_notes(
     now (chunk_index always 0) - real chunking for long documents is a
     further enhancement, not done here."""
     response = client.embeddings.create(
-        model="text-embedding-004",
+        model=EMBEDDING_MODEL,
         input=content,
         dimensions=EMBEDDING_DIMENSIONS,
     )
@@ -270,20 +296,41 @@ def process_capture(
 
     with conn.cursor() as cur:
         cur.execute(
-            "select user_id, kind, raw_text, source_url from captures where id = %s",
+            "select user_id, kind, raw_text, source_url, storage_path from captures where id = %s",
             (capture_id,),
         )
         row = cur.fetchone()
         if row is None:
             raise ValueError(f"capture {capture_id} not found")
-        user_id, kind, raw_text, source_url = row
+        user_id, kind, raw_text, source_url, storage_path = row
 
         cur.execute("select id, name from projects where user_id = %s", (user_id,))
         projects = cur.fetchall()
 
+    # Voice/image/PDF captures have no raw_text yet - extract it from the
+    # uploaded file first, then fall through to the same text pipeline
+    # everything else already runs (Section 12's nodes don't care whether
+    # the text originated as typed input or a transcription).
+    if not raw_text and not source_url and storage_path:
+        ext = os.path.splitext(storage_path)[1].lower()
+        mime_type = _MEDIA_MIME_TYPES.get(ext)
+        if mime_type is None:
+            raise ValueError(f"capture {capture_id} has an unsupported file type {ext!r}")
+
+        data = download_capture_object(storage_path)
+        extracted_text = client.extract_text_from_media(
+            mime_type, data, _EXTRACTION_PROMPTS.get(kind, "Extract the text content verbatim.")
+        ).strip()
+        if not extracted_text:
+            raise ValueError(f"capture {capture_id}: no text could be extracted from the file")
+
+        with conn.cursor() as cur:
+            cur.execute("update captures set raw_text = %s where id = %s", (extracted_text, capture_id))
+        raw_text = extracted_text
+
     text = raw_text or source_url or ""
     if not text.strip():
-        raise ValueError(f"capture {capture_id} has no raw_text or source_url")
+        raise ValueError(f"capture {capture_id} has no raw_text, source_url, or storage_path")
 
     project_by_name = {name: pid for pid, name in projects}
     extracted = _extract(client, text, list(project_by_name.keys()))

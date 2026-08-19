@@ -5,6 +5,7 @@ import uuid
 import psycopg
 import pytest
 
+import ai_core.pipeline as pipeline_module
 from ai_core.pipeline import EMBEDDING_DIMENSIONS, process_capture
 
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -29,20 +30,32 @@ def _vector(seed: float) -> list[float]:
 
 class FakeGeminiClient:
     """Stands in for ai_core.client.GeminiClient - process_capture only calls
-    client.chat.completions.create(...) (reading response.content) and
-    client.embeddings.create(...) (reading response.embedding)."""
+    client.chat.completions.create(...) (reading response.content),
+    client.embeddings.create(...) (reading response.embedding), and, for
+    voice/image/pdf captures, client.extract_text_from_media(...)."""
 
-    def __init__(self, payload: dict, embedding: list[float] | None = None):
+    def __init__(
+        self,
+        payload: dict,
+        embedding: list[float] | None = None,
+        extracted_text: str | None = None,
+    ):
         self._payload = payload
         self._embedding = embedding or _vector(0.1)
+        self._extracted_text = extracted_text
         self.chat = self
         self.completions = self
         self.embeddings = self
+        self.extract_calls = []
 
     def create(self, **kwargs):
         if "messages" in kwargs:
             return type("ChatCompletion", (), {"content": json.dumps(self._payload)})
         return type("EmbeddingResponse", (), {"embedding": self._embedding})
+
+    def extract_text_from_media(self, mime_type, data, prompt):
+        self.extract_calls.append({"mime_type": mime_type, "data": data, "prompt": prompt})
+        return self._extracted_text or ""
 
 
 @pytest.fixture
@@ -73,6 +86,21 @@ def _insert_capture(conn, raw_text: str) -> uuid.UUID:
             returning id
             """,
             (TEST_USER_ID, raw_text),
+        )
+        capture_id = cur.fetchone()[0]
+    conn.commit()
+    return capture_id
+
+
+def _insert_media_capture(conn, kind: str, storage_path: str) -> uuid.UUID:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            insert into captures (user_id, kind, storage_path)
+            values (%s, %s, %s)
+            returning id
+            """,
+            (TEST_USER_ID, kind, storage_path),
         )
         capture_id = cur.fetchone()[0]
     conn.commit()
@@ -313,3 +341,64 @@ def test_process_capture_links_related_notes_above_threshold(conn):
         relation_kind, weight = cur.fetchone()
         assert relation_kind == "relates_to"
         assert weight > 0.99
+
+
+def test_process_capture_transcribes_a_voice_capture_before_running_the_pipeline(conn, monkeypatch):
+    monkeypatch.setattr(pipeline_module, "download_capture_object", lambda path: b"fake-audio-bytes")
+    capture_id = _insert_media_capture(conn, "voice", f"{TEST_USER_ID}/note.webm")
+    client = FakeGeminiClient(
+        {**BASE_PAYLOAD, "title": "Voice memo", "summary": "A transcribed thought."},
+        extracted_text="Remember to call the dentist tomorrow.",
+    )
+
+    result = process_capture(conn, capture_id, client=client)
+
+    assert client.extract_calls == [
+        {
+            "mime_type": "audio/webm",
+            "data": b"fake-audio-bytes",
+            "prompt": pipeline_module._EXTRACTION_PROMPTS["voice"],
+        }
+    ]
+    with conn.cursor() as cur:
+        cur.execute("select raw_text, status from captures where id = %s", (capture_id,))
+        raw_text, status = cur.fetchone()
+    assert raw_text == "Remember to call the dentist tomorrow."
+    assert status == "organized"
+    with conn.cursor() as cur:
+        cur.execute("select content from notes where id = %s", (result.note_id,))
+        assert cur.fetchone()[0] == "Remember to call the dentist tomorrow."
+
+
+def test_process_capture_extracts_text_from_a_pdf_capture(conn, monkeypatch):
+    monkeypatch.setattr(pipeline_module, "download_capture_object", lambda path: b"fake-pdf-bytes")
+    capture_id = _insert_media_capture(conn, "pdf", f"{TEST_USER_ID}/doc.pdf")
+    client = FakeGeminiClient(
+        {**BASE_PAYLOAD, "title": "Contract", "summary": "A contract."},
+        extracted_text="This agreement is made between...",
+    )
+
+    process_capture(conn, capture_id, client=client)
+
+    assert client.extract_calls[0]["mime_type"] == "application/pdf"
+    with conn.cursor() as cur:
+        cur.execute("select raw_text from captures where id = %s", (capture_id,))
+        assert cur.fetchone()[0] == "This agreement is made between..."
+
+
+def test_process_capture_raises_for_unsupported_file_extension(conn, monkeypatch):
+    monkeypatch.setattr(pipeline_module, "download_capture_object", lambda path: b"data")
+    capture_id = _insert_media_capture(conn, "voice", f"{TEST_USER_ID}/note.aiff")
+    client = FakeGeminiClient(BASE_PAYLOAD)
+
+    with pytest.raises(ValueError, match="unsupported file type"):
+        process_capture(conn, capture_id, client=client)
+
+
+def test_process_capture_raises_when_extraction_returns_nothing(conn, monkeypatch):
+    monkeypatch.setattr(pipeline_module, "download_capture_object", lambda path: b"silence")
+    capture_id = _insert_media_capture(conn, "voice", f"{TEST_USER_ID}/silent.webm")
+    client = FakeGeminiClient(BASE_PAYLOAD, extracted_text="   ")
+
+    with pytest.raises(ValueError, match="no text could be extracted"):
+        process_capture(conn, capture_id, client=client)

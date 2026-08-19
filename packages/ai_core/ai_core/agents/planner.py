@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 
 import psycopg
 from ai_core.client import get_client, CHAT_MODEL
+from ai_core.i18n import language_suffix
 
 
 class CycleDetectedError(ValueError):
@@ -184,6 +185,7 @@ def decompose_project(
     user_id: uuid.UUID,
     project_id: uuid.UUID,
     goal: str,
+    language: str = "en",
 ) -> PlannerResult:
     with conn.cursor() as cur:
         name, overview, goals = _fetch_project(cur, user_id, project_id)
@@ -197,7 +199,7 @@ def decompose_project(
     response = client.chat.completions.create(
         model=CHAT_MODEL,
         messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": _SYSTEM_PROMPT + language_suffix(language)},
             {"role": "user", "content": f"{project_context}\n\nGoal to decompose: {goal}"},
         ],
         response_format={"type": "json_schema", "json_schema": _RESPONSE_SCHEMA},

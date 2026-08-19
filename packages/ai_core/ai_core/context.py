@@ -19,14 +19,14 @@ import uuid
 from dataclasses import dataclass, field
 
 import psycopg
-from ai_core.client import get_client, EMBEDDING_DIMENSIONS
+from ai_core.client import get_client, EMBEDDING_DIMENSIONS, EMBEDDING_MODEL
 VECTOR_TOP_K = 10
 MAX_CONTEXT_ITEMS = 20
 RECENT_AGENT_ACTIONS = 5
 
 # content_type -> (table, title-ish column) for resolving a matched
 # embedding chunk back to something a prompt/citation can name.
-_CONTENT_TABLES = {
+CONTENT_TABLES = {
     "note": ("notes", "title"),
     "task": ("tasks", "title"),
     "project": ("projects", "name"),
@@ -52,13 +52,13 @@ class ContextResult:
 
 def embed_query(client, query: str) -> list[float]:
     response = client.embeddings.create(
-        model="text-embedding-004", input=query, dimensions=EMBEDDING_DIMENSIONS
+        model=EMBEDDING_MODEL, input=query, dimensions=EMBEDDING_DIMENSIONS
     )
     return response.embedding
 
 
-def _title_for(cur: psycopg.Cursor, content_type: str, content_id: uuid.UUID) -> str:
-    table, column = _CONTENT_TABLES.get(content_type, (None, None))
+def title_for(cur: psycopg.Cursor, content_type: str, content_id: uuid.UUID) -> str:
+    table, column = CONTENT_TABLES.get(content_type, (None, None))
     if table is None or column is None:
         return content_type
     cur.execute(f"select {column} from {table} where id = %s", (content_id,))  # noqa: S608 - content_type is our own fixed lookup table, not user input
@@ -86,7 +86,7 @@ def _vector_search(
             ContextItem(
                 content_type=content_type,
                 content_id=content_id,
-                title=_title_for(cur, content_type, content_id),
+                title=title_for(cur, content_type, content_id),
                 text=chunk_text,
                 similarity=similarity,
             )
@@ -119,14 +119,14 @@ def _traverse_relationships(
         )
         for related_type, related_id in cur.fetchall():
             key = (related_type, related_id)
-            if key in seen or related_type not in _CONTENT_TABLES:
+            if key in seen or related_type not in CONTENT_TABLES:
                 continue
             seen.add(key)
             found.append(
                 ContextItem(
                     content_type=related_type,
                     content_id=related_id,
-                    title=_title_for(cur, related_type, related_id),
+                    title=title_for(cur, related_type, related_id),
                     text="",
                 )
             )

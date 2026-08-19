@@ -22,6 +22,7 @@ import psycopg
 from ai_core.client import get_client, CHAT_MODEL
 
 from ai_core.context import ContextResult, build_context
+from ai_core.i18n import language_suffix
 
 
 _SYSTEM_PROMPT = (
@@ -58,6 +59,7 @@ def query_memory_stream(
     user_id: uuid.UUID,
     query: str,
     history: list[dict[str, str]] | None = None,
+    language: str = "en",
 ) -> tuple[Iterator[str], list[Citation]]:
     context = build_context(conn, client, user_id, query)
     citations = [
@@ -68,7 +70,7 @@ def query_memory_stream(
     messages = [
         {
             "role": "system",
-            "content": f"{_SYSTEM_PROMPT}\n\nContext:\n{_format_context(context)}",
+            "content": f"{_SYSTEM_PROMPT}{language_suffix(language)}\n\nContext:\n{_format_context(context)}",
         },
         *(history or []),
         {"role": "user", "content": query},
