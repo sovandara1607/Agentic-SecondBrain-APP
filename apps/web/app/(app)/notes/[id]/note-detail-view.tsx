@@ -2,21 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  Sparkles,
-  Link2,
-  X,
-  Edit3,
-  BookOpen,
-  Calendar,
-  Tag,
-  Folder,
-  Check,
-  Loader2,
-  AlertCircle,
-} from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -24,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { DeleteButton } from "@/components/delete-button";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import { friendlyError } from "@/lib/friendly-error";
 import {
   deleteNote,
   addNoteTag,
@@ -101,12 +91,14 @@ export function NoteDetailView({
         if (res?.success) {
           setSaveStatus("saved");
         } else {
+          console.error("note save failed:", res?.error);
           setSaveStatus("error");
-          setErrorMessage(res?.error ?? "Failed to save");
+          setErrorMessage(res?.error ? friendlyError(res.error) : "Couldn't save. Please try again.");
         }
       } catch (err) {
+        console.error("note save failed:", err);
         setSaveStatus("error");
-        setErrorMessage(err instanceof Error ? err.message : "Save failed");
+        setErrorMessage(friendlyError(err));
       }
     }, 750);
 
@@ -123,7 +115,7 @@ export function NoteDetailView({
           href="/notes"
           className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
         >
-          <ArrowLeft className="size-3.5" strokeWidth={2} />
+          <Icon name="arrow_back" size={14} weight={600} />
           Back to Notes
         </Link>
 
@@ -132,12 +124,12 @@ export function NoteDetailView({
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/50 bg-muted/30 text-xs">
             {saveStatus === "saved" && (
               <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
-                <Check className="size-3.5" /> Saved
+                <Icon name="check" size={14} /> Saved
               </span>
             )}
             {saveStatus === "saving" && (
               <span className="flex items-center gap-1.5 text-primary font-medium">
-                <Loader2 className="size-3.5 animate-spin" /> Saving...
+                <Icon name="progress_activity" size={14} className="animate-spin" /> Saving...
               </span>
             )}
             {saveStatus === "unsaved" && (
@@ -147,7 +139,7 @@ export function NoteDetailView({
             )}
             {saveStatus === "error" && (
               <span className="flex items-center gap-1.5 text-destructive font-medium" title={errorMessage ?? undefined}>
-                <AlertCircle className="size-3.5" /> Save failed
+                <Icon name="error" size={14} /> Save failed
               </span>
             )}
           </div>
@@ -161,12 +153,12 @@ export function NoteDetailView({
           >
             {isEditing ? (
               <>
-                <BookOpen className="size-3.5" />
+                <Icon name="menu_book" size={14} />
                 Reading Mode
               </>
             ) : (
               <>
-                <Edit3 className="size-3.5" />
+                <Icon name="edit" size={14} />
                 Edit Note
               </>
             )}
@@ -190,18 +182,18 @@ export function NoteDetailView({
           </Badge>
           {currentProject && (
             <Badge variant="muted" className="gap-1">
-              <Folder className="size-3 text-muted-foreground" />
+              <Icon name="folder" size={12} className="text-muted-foreground" />
               {currentProject.name}
             </Badge>
           )}
           {note.capture_id && (
             <Badge variant="muted" className="gap-1 text-primary">
-              <Sparkles className="size-3" />
+              <Icon name="auto_awesome" size={12} />
               From Capture
             </Badge>
           )}
           <span className="flex items-center gap-1 text-xs text-muted-foreground ml-auto">
-            <Calendar className="size-3" />
+            <Icon name="calendar_month" size={12} />
             Updated {note.updated_at ? new Date(note.updated_at).toLocaleDateString() : "Just now"}
           </span>
         </div>
@@ -225,20 +217,19 @@ export function NoteDetailView({
 
         {/* Tags Bar */}
         <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/40">
-          <Tag className="size-3.5 text-muted-foreground shrink-0" />
+          <Icon name="sell" size={14} className="text-muted-foreground shrink-0" />
           {(tags ?? []).map((tag) => (
             <form key={tag.id} action={removeNoteTag} className="inline-flex">
               <input type="hidden" name="note_id" value={note.id} />
               <input type="hidden" name="tag_id" value={tag.id} />
               <Badge variant="muted" className="gap-1 pr-1 text-xs">
                 {tag.name}
-                <button
-                  type="submit"
+                <FormSubmitButton
                   aria-label={`Remove tag ${tag.name}`}
                   className="rounded-full hover:text-destructive transition-colors"
                 >
-                  <X className="size-3" strokeWidth={2} />
-                </button>
+                  <Icon name="close" size={12} weight={600} />
+                </FormSubmitButton>
               </Badge>
             </form>
           ))}
@@ -250,9 +241,9 @@ export function NoteDetailView({
               placeholder="+ Add tag"
               className="h-6 w-24 px-2 text-xs border-dashed"
             />
-            <Button type="submit" size="xs" variant="ghost" className="h-6 text-xs">
+            <SubmitButton size="xs" variant="ghost" className="h-6 text-xs" pendingText="...">
               Add
-            </Button>
+            </SubmitButton>
           </form>
         </div>
       </div>
@@ -262,7 +253,7 @@ export function NoteDetailView({
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="flex items-start gap-3 p-4">
             <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Sparkles className="size-4" strokeWidth={2} />
+              <Icon name="auto_awesome" size={16} weight={600} />
             </span>
             <div className="space-y-1">
               <p className="text-xs font-semibold text-primary uppercase tracking-wider">
@@ -344,7 +335,7 @@ export function NoteDetailView({
       {((linkedNotes?.length ?? 0) > 0 || (backlinkNotes?.length ?? 0) > 0) && (
         <div className="space-y-3 rounded-xl border border-border/60 bg-card p-5">
           <h3 className="font-heading text-sm font-semibold flex items-center gap-2">
-            <Link2 className="size-4 text-primary" />
+            <Icon name="link" size={16} className="text-primary" />
             Connected Second Brain Notes
           </h3>
 
@@ -358,7 +349,7 @@ export function NoteDetailView({
                   {linkedNotes.map((n) => (
                     <Link key={n.id} href={`/notes/${n.id}`}>
                       <Badge variant="muted" className="gap-1.5 hover:bg-muted/80">
-                        <Link2 className="size-3 text-primary" strokeWidth={2} />
+                        <Icon name="link" size={12} className="text-primary" weight={600} />
                         {n.title}
                       </Badge>
                     </Link>
@@ -376,7 +367,7 @@ export function NoteDetailView({
                   {backlinkNotes.map((n) => (
                     <Link key={n.id} href={`/notes/${n.id}`}>
                       <Badge variant="muted" className="gap-1.5 hover:bg-muted/80">
-                        <Link2 className="size-3 text-primary" strokeWidth={2} />
+                        <Icon name="link" size={12} className="text-primary" weight={600} />
                         {n.title}
                       </Badge>
                     </Link>

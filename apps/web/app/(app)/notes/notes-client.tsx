@@ -3,24 +3,19 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  FileText,
-  Search,
-  Plus,
-  X,
-  Calendar,
-  Folder,
-  ChevronRight,
-  Filter,
-} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
 import { EmptyState } from "@/components/empty-state";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import { WriterButton } from "@/components/writer-button";
+import { ResearchButton } from "@/components/research-button";
 import { createNote } from "./actions";
+import { useLocale } from "@/lib/i18n/locale-provider";
 
 type Project = { id: string; name: string };
 type NoteItem = {
@@ -65,6 +60,7 @@ export function NotesClient({
 }) {
   const router = useRouter();
   const [showCreate, setShowCreate] = useState(false);
+  const { t } = useLocale();
   const [query, setQuery] = useState(initialQuery ?? "");
   const [selectedType, setSelectedType] = useState(initialType || "all");
   const [selectedProject, setSelectedProject] = useState(initialProject || "");
@@ -116,26 +112,30 @@ export function NotesClient({
       {/* Top Header & Actions Bar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-bold tracking-tight">Notes</h1>
+          <h1 className="font-heading text-2xl font-bold tracking-tight">{t("notes")}</h1>
           <p className="text-sm text-muted-foreground">
             Knowledge, meeting records, and decisions organized in your second brain.
           </p>
         </div>
 
-        <Button
-          onClick={() => setShowCreate((prev) => !prev)}
-          className="gap-1.5 self-start sm:self-auto"
-        >
-          {showCreate ? (
-            <>
-              <X className="size-4" /> Close
-            </>
-          ) : (
-            <>
-              <Plus className="size-4" /> New Note
-            </>
-          )}
-        </Button>
+        <div className="flex flex-col flex-wrap gap-2 self-start sm:flex-row sm:items-center sm:self-auto">
+          <WriterButton apiUrl={process.env.NEXT_PUBLIC_API_URL!} />
+          <ResearchButton apiUrl={process.env.NEXT_PUBLIC_API_URL!} />
+          <Button
+            onClick={() => setShowCreate((prev) => !prev)}
+            className="gap-1.5"
+          >
+            {showCreate ? (
+              <>
+                <Icon name="close" size={16} /> Close
+              </>
+            ) : (
+              <>
+                <Icon name="add" size={16} /> New Note
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Quick Note Creation Pane */}
@@ -144,7 +144,7 @@ export function NotesClient({
           <CardContent className="p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-border/40 pb-3">
               <h2 className="font-heading text-base font-semibold flex items-center gap-2">
-                <FileText className="size-4 text-primary" />
+                <Icon name="description" size={16} className="text-primary" />
                 Create New Note
               </h2>
               <button
@@ -152,7 +152,7 @@ export function NotesClient({
                 onClick={() => setShowCreate(false)}
                 className="text-muted-foreground hover:text-foreground"
               >
-                <X className="size-4" />
+                <Icon name="close" size={16} />
               </button>
             </div>
 
@@ -179,7 +179,7 @@ export function NotesClient({
                 <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">Save note</Button>
+                <SubmitButton pendingText="Saving...">{t("saveNote")}</SubmitButton>
               </div>
             </form>
           </CardContent>
@@ -210,7 +210,7 @@ export function NotesClient({
       {/* Search & Project Filter Bar */}
       <div className="flex flex-col sm:flex-row gap-2.5">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+          <Icon name="search" size={16} className="absolute left-3 top-2.5 text-muted-foreground" />
           <Input
             name="q"
             value={query}
@@ -225,7 +225,7 @@ export function NotesClient({
               className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
               aria-label="Clear search"
             >
-              <X className="size-4" />
+              <Icon name="close" size={16} />
             </button>
           )}
         </div>
@@ -260,7 +260,7 @@ export function NotesClient({
                           </Badge>
                           {project && (
                             <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground truncate max-w-[120px]">
-                              <Folder className="size-3 shrink-0" />
+                              <Icon name="folder" size={12} />
                               {project.name}
                             </span>
                           )}
@@ -275,10 +275,14 @@ export function NotesClient({
 
                       <div className="flex items-center justify-between border-t border-border/40 pt-2.5 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
-                          <Calendar className="size-3" />
+                          <Icon name="calendar_month" size={12} />
                           {new Date(note.updated_at).toLocaleDateString()}
                         </span>
-                        <ChevronRight className="size-4 text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                        <Icon
+                          name="chevron_right"
+                          size={16}
+                          className="text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 transition-all"
+                        />
                       </div>
                     </CardContent>
                   </Card>
@@ -288,13 +292,13 @@ export function NotesClient({
           </div>
         ) : query.trim() || selectedType !== "all" || selectedProject ? (
           <EmptyState
-            icon={Search}
+            icon="search"
             title="No notes found"
             description={`No notes match your current search "${query}".`}
           />
         ) : (
           <EmptyState
-            icon={FileText}
+            icon="description"
             title="No notes yet"
             description="Click '+ New Note' above or capture thoughts in the Inbox to get started."
           />
