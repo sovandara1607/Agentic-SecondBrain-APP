@@ -210,9 +210,17 @@ export function CalendarClient({
   // it in sync whenever the server's real data does arrive, which by
   // then should already match what was optimistically applied.
   const [localBlocks, setLocalBlocks] = useState(blocks);
-  useEffect(() => {
+  // Adjust local state during render when the `blocks` prop itself
+  // changes, rather than in an Effect - this is React's documented
+  // pattern for "resetting/adjusting state when a prop changes"
+  // (react.dev: "You Might Not Need an Effect"), and avoids the extra
+  // render an Effect-based sync would cost on top of the optimistic
+  // update this state already exists for (see comment above).
+  const [prevBlocksProp, setPrevBlocksProp] = useState(blocks);
+  if (blocks !== prevBlocksProp) {
+    setPrevBlocksProp(blocks);
     setLocalBlocks(blocks);
-  }, [blocks]);
+  }
 
   const [showUnscheduled, setShowUnscheduled] = useState(true);
   const [hoveredSlot, setHoveredSlot] = useState<string | null>(null);
@@ -231,6 +239,13 @@ export function CalendarClient({
   const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
+    // Legitimate Effect use (react.dev: "Subscribing to an external
+    // event"): `now` starts null so the server-rendered markup never
+    // has to match the browser's clock (see comment above), then this
+    // reveals the real time post-mount and keeps it ticking every
+    // minute - there's no render-time equivalent for "the current
+    // time," it has to come from an Effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);

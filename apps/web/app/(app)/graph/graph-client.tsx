@@ -37,6 +37,12 @@ function layout(nodes: GraphNode[], edges: GraphEdge[]): { nodes: SimNode[]; edg
     target: string | SimNode;
   }[];
 
+  // d3-force's own types require simulation nodes/links to satisfy
+  // SimulationNodeDatum/SimulationLinkDatum, which conflicts with the
+  // GraphNode/GraphEdge shapes this component actually works with - the
+  // `any` casts below are the documented interop pattern for extending
+  // d3-force with custom node/link fields, not app-code laxness.
+  /* eslint-disable @typescript-eslint/no-explicit-any */
   const simulation = forceSimulation(simNodes as any)
     .force(
       "link",
@@ -49,6 +55,7 @@ function layout(nodes: GraphNode[], edges: GraphEdge[]): { nodes: SimNode[]; edg
     .force("center", forceCenter(WIDTH / 2, HEIGHT / 2))
     .force("collide", forceCollide((d: any) => 10 + Math.min(d.degree, 8) * 2))
     .stop();
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // Deterministic, synchronous layout: settle the simulation up front
   // rather than animating ticks in React state - a few hundred nodes
@@ -62,7 +69,12 @@ function layout(nodes: GraphNode[], edges: GraphEdge[]): { nodes: SimNode[]; edg
 function bfsReachable(focusId: string, edges: GraphEdge[], maxDepth = 2): Set<string> {
   const adjacency = new Map<string, string[]>();
   for (const e of edges) {
+    // Same d3-force interop as layout() above: post-simulation, a
+    // link's source/target is mutated in place from a string id into
+    // the actual node object, which GraphEdge's type doesn't reflect.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const s = typeof e.source === "string" ? e.source : (e.source as any).id;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const t = typeof e.target === "string" ? e.target : (e.target as any).id;
     (adjacency.get(s) ?? adjacency.set(s, []).get(s)!).push(t);
     (adjacency.get(t) ?? adjacency.set(t, []).get(t)!).push(s);
@@ -105,7 +117,9 @@ export function GraphClient({ nodes, edges }: { nodes: GraphNode[]; edges: Graph
     () =>
       edges.filter(
         (e) =>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           visibleNodeIds.has(typeof e.source === "string" ? e.source : (e.source as any).id) &&
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           visibleNodeIds.has(typeof e.target === "string" ? e.target : (e.target as any).id),
       ),
     [edges, visibleNodeIds],
@@ -213,7 +227,9 @@ export function GraphClient({ nodes, edges }: { nodes: GraphNode[]; edges: Graph
         >
           <g transform={`translate(${transform.x} ${transform.y}) scale(${transform.k})`}>
             {visibleEdges.map((e, i) => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const s = nodeById.get(typeof e.source === "string" ? e.source : (e.source as any).id);
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const t = nodeById.get(typeof e.target === "string" ? e.target : (e.target as any).id);
               if (!s || !t) return null;
               const dimmed = reachable && (!reachable.has(s.id) || !reachable.has(t.id));

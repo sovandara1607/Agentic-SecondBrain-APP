@@ -134,6 +134,12 @@ export default async function DashboardPage() {
   const noteIds = [...new Set((linkRows.data ?? []).map((r) => r.source_id))];
   const projectIds = [...new Set((linkRows.data ?? []).map((r) => r.target_id))];
 
+  // Date.now() here is inherently a request-time read (this is an async
+  // Server Component re-executed fresh per request, not a memoized
+  // client render) - the compiler's purity check doesn't distinguish
+  // that from a client component's render body, so it's disabled with
+  // that context rather than worked around.
+  // eslint-disable-next-line react-hooks/purity
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const [dormantNotes, linkedActiveProjects] = await Promise.all([
     noteIds.length

@@ -106,10 +106,17 @@ export function AppShell({
   // they're fundamentally different things (jump to a page vs. find a
   // specific note/task).
   useEffect(() => {
+    // Legitimate Effect use: debounced fetch against an external system
+    // (GET /search) triggered by query/paletteOpen changes - the two
+    // setState calls just reset local state before the debounce timer
+    // fires, there's no render-time equivalent for "clear last search's
+    // results while a new debounce window starts."
     const trimmed = query.trim();
     if (!paletteOpen || trimmed.length < 2) {
+      /* eslint-disable react-hooks/set-state-in-effect */
       setSearchResults([]);
       setSearching(false);
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
     setSearching(true);
@@ -137,15 +144,22 @@ export function AppShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, paletteOpen]);
 
-  // Close mobile drawer on navigation
-  useEffect(() => {
+  // Close mobile drawer on navigation - adjusted during render (not in
+  // an Effect) when `pathname` itself changes, same pattern as
+  // calendar-client.tsx's localBlocks sync.
+  const [prevPathname, setPrevPathname] = useState(pathname);
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
     setMobileOpen(false);
-  }, [pathname]);
+  }
 
-  // Sync collapsed state with localStorage safely
+  // Sync collapsed state with localStorage safely - legitimate Effect
+  // use: reads browser-only APIs (localStorage, matchMedia) that don't
+  // exist during server render, so this can only run post-mount.
   useEffect(() => {
     if (typeof window !== "undefined") {
       const stored = window.localStorage.getItem(COLLAPSE_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCollapsed(
         stored !== null
           ? stored === "true"

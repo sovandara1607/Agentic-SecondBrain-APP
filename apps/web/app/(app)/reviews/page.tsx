@@ -13,7 +13,7 @@ type ReviewItem = { id: string; title: string; reason?: string; status?: string 
 type ProjectProgressItem = { id: string; name: string; progress: number; completed_this_week: number };
 type MonthlyProjectProgressItem = { id: string; name: string; latest_progress: number; completed_this_month: number };
 
-function Section({
+function Section<T>({
   icon,
   label,
   items,
@@ -22,9 +22,9 @@ function Section({
 }: {
   icon: string;
   label: string;
-  items: unknown[];
+  items: T[];
   emptyLabel: string;
-  render: (item: any) => ReactNode;
+  render: (item: T) => ReactNode;
 }) {
   return (
     <div className="space-y-1.5">

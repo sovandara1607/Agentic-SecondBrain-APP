@@ -162,7 +162,7 @@ export default async function SettingsPage() {
             <div className="space-y-2">
               <Label>Scheduler weights</Label>
               <p className="text-xs text-muted-foreground">
-                How the placement score combines urgency, priority, and the parent project's
+                How the placement score combines urgency, priority, and the parent project&apos;s
                 weight. Values don&apos;t need to sum to 1, but it keeps them easy to reason
                 about.
               </p>

@@ -66,7 +66,6 @@ export function NotesClient({
   const [selectedProject, setSelectedProject] = useState(initialProject || "");
 
   const safeNotes = notes ?? [];
-  const safeProjects = projects ?? [];
 
   // Real-time client-side filtered notes (0ms typing response)
   const filteredNotes = safeNotes.filter((note) => {

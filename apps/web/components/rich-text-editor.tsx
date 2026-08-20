@@ -11,7 +11,11 @@ import { createClient } from "@/lib/supabase/client";
 function useIsDark(): boolean {
   const [isDark, setIsDark] = useState(false);
   useEffect(() => {
+    // Legitimate Effect use: reads/observes the DOM (an external
+    // system), which doesn't exist during server render and can only
+    // be read post-mount.
     const root = document.documentElement;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsDark(root.classList.contains("dark"));
     // theme-toggle.tsx flips the class directly with no accompanying
     // event, so a MutationObserver is the only way to notice.

@@ -40,6 +40,11 @@ export default function SearchPage() {
   const [searched, setSearched] = useState(false);
 
   useEffect(() => {
+    // Legitimate Effect use: debounced fetch against an external system
+    // (GET /search) plus a router.replace side effect, both triggered
+    // by `query` changing - the early-return resets just clear stale
+    // results before the debounce timer (or the "too short" bail-out)
+    // takes effect, mirroring app-sidebar.tsx's identical pattern.
     const trimmed = query.trim();
     const params = new URLSearchParams(searchParams.toString());
     if (trimmed) params.set("q", trimmed);
@@ -47,8 +52,10 @@ export default function SearchPage() {
     router.replace(`/search${params.toString() ? `?${params}` : ""}`, { scroll: false });
 
     if (trimmed.length < 2) {
+      /* eslint-disable react-hooks/set-state-in-effect */
       setResults([]);
       setSearched(false);
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
 
