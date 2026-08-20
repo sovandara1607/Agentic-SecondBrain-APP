@@ -15,6 +15,19 @@ jobs:
   python-tests:
     name: Python lint + tests (api, worker, ai_core)
     runs-on: ubuntu-latest
+    # apps/api/core/config.py's Settings has no defaults for
+    # database_url/jwt_secret, and main.py reads get_settings() at
+    # import time (for CORSMiddleware) - so even tests that never touch
+    # a database (test_health.py, JWT-signature tests, etc.) fail to
+    # import `main` at all without these present. DATABASE_URL is a
+    # syntactically-valid but unreachable placeholder on purpose: the
+    # conftest.py skip-guards in each suite already detect "can't
+    # actually connect" and skip DB-integration tests accordingly, so
+    # this only needs to satisfy pydantic validation, not point at a
+    # real database. Neither value is a real secret.
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      JWT_SECRET: ci-placeholder-not-a-real-secret
     steps:
       - uses: actions/checkout@v4
 
