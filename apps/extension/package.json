@@ -1,0 +1,16 @@
+{
+  "name": "second-brain-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser extension: capture the current page or a selection into Second Brain's Inbox.",
+  "scripts": {
+    "build": "node build.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "esbuild": "^0.25.0",
+    "typescript": "^5"
+  }
+}

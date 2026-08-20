@@ -10,6 +10,16 @@ updates:
         update-types: ["minor", "patch"]
     open-pull-requests-limit: 10
 
+  # apps/extension (npm) - its own package.json/lock, separate from web
+  - package-ecosystem: "npm"
+    directory: "/apps/extension"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 10
+
   # The uv workspace root - covers apps/api, packages/ai_core, worker,
   # and the root pyproject.toml/uv.lock in one graph, matching how `uv
   # sync --all-packages` already treats them as one unit.
