@@ -13,13 +13,12 @@ would fight against plain token streaming.
 
 from __future__ import annotations
 
-import os
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 
 import psycopg
-from ai_core.client import get_client, CHAT_MODEL
+from ai_core.client import CHAT_MODEL
 
 from ai_core.context import ContextResult, build_context
 from ai_core.i18n import language_suffix

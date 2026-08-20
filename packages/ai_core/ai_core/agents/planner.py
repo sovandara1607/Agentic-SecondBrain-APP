@@ -36,12 +36,11 @@ less structured input.
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from dataclasses import dataclass, field
 
 import psycopg
-from ai_core.client import get_client, CHAT_MODEL
+from ai_core.client import CHAT_MODEL
 from ai_core.i18n import language_suffix
 
 

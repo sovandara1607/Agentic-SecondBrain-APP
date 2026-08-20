@@ -1,0 +1,12 @@
+# Scoped intentionally to Pyflakes (real bugs: unused imports, undefined
+# names, unused variables) rather than ruff's full default/preview rule
+# set. This codebase doesn't follow PEP8 line-length conventions (many
+# genuinely-fine lines run past 88/100 chars in comments and docstrings
+# that explain *why*, which this repo leans on heavily) or import-sort
+# order, and a drive-by reformat/modernization pass (datetime timezone
+# awareness, isort, pyupgrade, flake8-bugbear, etc.) is a real follow-up
+# of its own, not something to fold into introducing CI. Pyflakes alone
+# already catches the class of bug most worth automating: a genuinely
+# unused import/variable, or a use of an undefined name.
+[lint]
+select = ["F"]

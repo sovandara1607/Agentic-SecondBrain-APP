@@ -19,7 +19,8 @@ import uuid
 from dataclasses import dataclass, field
 
 import psycopg
-from ai_core.client import get_client, EMBEDDING_DIMENSIONS, EMBEDDING_MODEL
+from ai_core.client import EMBEDDING_DIMENSIONS, EMBEDDING_MODEL
+
 VECTOR_TOP_K = 10
 MAX_CONTEXT_ITEMS = 20
 RECENT_AGENT_ACTIONS = 5
