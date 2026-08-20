@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same branch/PR so pushes during review
+# don't queue up redundant work.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-tests:
+    name: Python lint + tests (api, worker, ai_core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Sync the uv workspace
+        run: uv sync --all-packages
+
+      # ruff.toml scopes this to Pyflakes only (see that file for why).
+      - name: Lint (ruff)
+        run: uvx ruff check .
+
+      # No live Postgres in CI yet (spinning up the full self-hosted
+      # Supabase stack - Postgres, GoTrue, Storage, Realtime - as a CI
+      # job is a real follow-up, not bundled into this pass). Each
+      # suite's conftest.py probes DATABASE_URL once and skips (loudly,
+      # not silently) whichever tests actually need it when it's
+      # unreachable, so this still runs every pure-logic test for real
+      # (JWT verification, the webfetch SSRF guard, pipeline node logic,
+      # etc.) instead of just checking that pytest collects.
+      - name: Run tests
+        run: uv run pytest apps/api packages/ai_core worker -q
+
+  web-build:
+    name: Web lint + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

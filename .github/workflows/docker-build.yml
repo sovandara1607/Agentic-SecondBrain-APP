@@ -1,0 +1,68 @@
+name: Docker build
+
+# Builds and publishes web/api/worker images to GHCR on every merge to
+# main (spec Section 18's "build and tag Docker images... push to a
+# container registry" step). Uses the repo's built-in GITHUB_TOKEN, so
+# no registry secret needs to be configured to get this far.
+#
+# Deliberately stops here: the actual deploy step (SSH into a VPS,
+# `docker compose pull && up -d`, per Section 18) needs a target host
+# and SSH key as repo secrets that only the repo owner has - add a
+# `deploy` job below once those exist.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # NEXT_PUBLIC_* build ARGs (Supabase URL/anon key, API URL,
+          # site URL) are deliberately not passed here - they get baked
+          # into the client bundle at build time, so a real image needs
+          # real values, which only exist once there's an actual target
+          # environment (the same "deploy step needs secrets only the
+          # repo owner has" reason the deploy job itself is deferred).
+          # This build validates the Dockerfile still builds; a
+          # deploy-specific build would supply the real values.
+          - name: web
+            context: apps/web
+            dockerfile: apps/web/Dockerfile
+          - name: api
+            context: .
+            dockerfile: apps/api/Dockerfile
+          - name: worker
+            context: .
+            dockerfile: worker/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
