@@ -38,8 +38,20 @@ jobs:
       # unreachable, so this still runs every pure-logic test for real
       # (JWT verification, the webfetch SSRF guard, pipeline node logic,
       # etc.) instead of just checking that pytest collects.
-      - name: Run tests
-        run: uv run pytest apps/api packages/ai_core worker -q
+      #
+      # Run as three separate invocations, not one combined
+      # `pytest apps/api packages/ai_core worker` - each directory has
+      # its own tests/conftest.py, and pytest's default import mode
+      # resolves all three to the same bare `tests.conftest` module
+      # name when collected together, which pytest rejects as a
+      # conflicting plugin registration (ImportPathMismatchError).
+      # Matches how these already run locally, one project at a time.
+      - name: Run tests (api)
+        run: uv run pytest apps/api -q
+      - name: Run tests (ai_core)
+        run: uv run pytest packages/ai_core -q
+      - name: Run tests (worker)
+        run: uv run pytest worker -q
 
   web-build:
     name: Web lint + build
