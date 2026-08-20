@@ -13,7 +13,7 @@
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@supabase/ssr": "^0.12.4",
-    "@supabase/supabase-js": "^2.112.2",
+    "@supabase/supabase-js": "^2.112.3",
     "@tailwindcss/typography": "^0.5.20",
     "@tinymce/tinymce-react": "^6.3.0",
     "class-variance-authority": "^0.7.1",
@@ -21,10 +21,10 @@
     "d3-force": "^3.0.0",
     "marked": "^18.0.9",
     "material-symbols": "^0.46.0",
-    "next": "16.3.0",
+    "next": "16.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "shadcn": "^4.16.2",
+    "shadcn": "^4.18.0",
     "tailwind-merge": "^3.6.0",
     "tinymce": "^8.8.2",
     "turndown": "^7.2.4",
@@ -38,7 +38,7 @@
     "@types/react-dom": "^19",
     "@types/turndown": "^5.0.6",
     "eslint": "^9",
-    "eslint-config-next": "16.3.0",
+    "eslint-config-next": "16.3.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
